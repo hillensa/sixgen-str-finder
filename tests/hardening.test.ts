@@ -270,3 +270,17 @@ test("the runbook names the conditions under which results should not be trusted
     assert.ok(rb.includes(topic), `runbook does not cover: ${topic}`);
   }
 });
+
+test("REGRESSION: robots.txt is not swallowed by the auth redirect", () => {
+  // The middleware matcher excluded images and _next but not .txt, so
+  // /robots.txt 307'd to /login. A crawler never reached the Disallow, which
+  // defeats the only reason the file exists: keeping the login page out of
+  // search results next to the public sixgenrentals.com site.
+  const src = readFileSync(join(__dirname, "..", "src", "middleware.ts"), "utf8");
+  const m = /matcher:\s*\["([^"]+)"\]/.exec(src);
+  assert.ok(m, "the middleware must declare a matcher");
+  const re = new RegExp(m![1].replace(/\\/g, "\\"));
+  assert.equal(re.test("/robots.txt"), false, "robots.txt must bypass the middleware");
+  assert.equal(re.test("/dashboard"), true, "a real page must still be gated");
+  assert.equal(re.test("/api/pipeline"), true, "an API route must still be gated");
+});

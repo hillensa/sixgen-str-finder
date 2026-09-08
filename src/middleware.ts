@@ -82,5 +82,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js)$).*)"],
+  // robots.txt and sitemap.xml are excluded deliberately. robots.txt was being
+  // redirected to /login like any other path, so a crawler never reached the
+  // Disallow and the login page could still surface in search beside the public
+  // sixgenrentals.com site — the exact thing the file exists to prevent. Neither
+  // carries anything worth gating.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js)$).*)"],
 };
