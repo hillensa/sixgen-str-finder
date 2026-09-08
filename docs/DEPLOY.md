@@ -147,3 +147,60 @@ get in even with a valid Supabase account.
 - **Preview deployments get a public vercel.app URL.** They are auth-gated like
   production, but if you would rather they not exist at all, turn preview
   deployments off or protect them in Vercel's settings.
+
+---
+
+## Traps this deployment actually hit
+
+Recorded because none of them are guessable and all three cost real time.
+
+### Vercel "Secret" env vars break this app
+
+Vercel offers two types when you add a variable. **Use Config for all five.**
+
+A **Secret** is write-only: unreadable at build *and* at runtime. That breaks the
+app twice over.
+
+- `NEXT_PUBLIC_*` values are inlined into the bundle **at build time**. As
+  Secrets they are unreadable then, so they compile to `undefined`, and
+  `createServerClient(undefined, undefined)` throws in the Edge middleware —
+  which runs on every request. Every route returns
+  `500 · X-Vercel-Error: MIDDLEWARE_INVOCATION_FAILED`, with no application log,
+  because the failure happens before any handler.
+- `SUPABASE_SERVICE_ROLE_KEY` came back `undefined` at runtime too, which
+  `/api/health` reported honestly as `missing: SUPABASE_SERVICE_ROLE_KEY`.
+
+Config is not a downgrade in secrecy. Neither server value carries the
+`NEXT_PUBLIC_` prefix, so Next.js never ships it to the browser either way. All
+Config changes is that you can reveal the value in your own dashboard — which is
+also how you recover it later.
+
+A Secret **cannot be converted**; delete it and re-add it as Config.
+
+### Changing env vars does nothing until you rebuild
+
+`NEXT_PUBLIC_*` values are baked in at build. Editing them changes nothing that
+is already deployed.
+
+**Push a commit rather than using the Redeploy button.** We clicked Redeploy and
+it silently did not fire — the deployment list still showed one build from 40
+minutes earlier, so the site kept serving the broken bundle while we waited on it.
+An empty commit is reliable and leaves a record of why the rebuild happened:
+
+```bash
+git commit --allow-empty -m "Rebuild to pick up env var changes" && git push
+```
+
+### Local timing hides races that production exposes
+
+`MapView` imports Leaflet dynamically and its layer effects return early when the
+map does not exist yet. Nothing re-ran them once it did.
+
+Locally Leaflet is cached and the database round trip is the slow part, so the map
+always won that race. In production the Leaflet chunk is a cold network fetch
+while `/api/market` is fast and colocated, so the data arrived first and **no
+layer was ever drawn** — a working map with nothing on it, and no error anywhere.
+
+The general lesson: anything gated on a dynamically imported module needs an
+explicit readiness signal in its dependencies. "It works locally" says nothing
+about which side of that race production lands on.
