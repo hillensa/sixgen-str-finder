@@ -155,3 +155,15 @@ test("an HTTP error carries the server's explanation", async () => {
     /401.*Unauthorized.*token expired/s,
   );
 });
+
+// ── the same trap on the CSV path ───────────────────────────────────────────
+test("REGRESSION: a CSV fee frequency column is honoured, not ignored", async () => {
+  // flexmls exports name this association_fee and commonly state it annually.
+  // Mapped straight to monthly it overstates carrying cost twelvefold.
+  const { parseListingRow } = await import("../src/lib/providers/listings");
+  const base = { address: "1 Main St", lat: "38", lng: "-84" };
+  assert.equal(parseListingRow({ ...base, association_fee: "1200", association_fee_frequency: "Annually" })!.hoaFeeMonthly, 100);
+  assert.equal(parseListingRow({ ...base, hoa_fee: "150", hoa_fee_frequency: "Monthly" })!.hoaFeeMonthly, 150);
+  assert.equal(parseListingRow({ ...base, hoa_fee: "150" })!.hoaFeeMonthly, 150, "no frequency column keeps the documented monthly reading");
+  assert.equal(parseListingRow({ ...base, hoa_fee: "1200", hoa_fee_frequency: "Who Knows" })!.hoaFeeMonthly, null, "an unreadable cadence is not a guess");
+});

@@ -6,6 +6,7 @@
 import type { HoaStatus } from "../types";
 import { hoaStatusFrom } from "../filters";
 import { parseAddress } from "../address";
+import { monthlyFee } from "./reso";
 
 export type NormalizedListing = {
   externalId: string;
@@ -71,6 +72,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   stories: ["stories", "levels"], garage: ["garage"], pool: ["pool"], basement: ["basement"], finishedBasement: ["finished_basement"],
   hoa: ["hoa", "has_hoa"], hoaVerified: ["hoa_verified", "hoa_confirmed"], unit: ["unit", "apt", "suite"],
   hoaFeeMonthly: ["hoa_fee", "hoa_monthly", "hoa_fee_monthly", "association_fee"], hoaName: ["hoa_name", "association_name"],
+  hoaFeeFrequency: ["hoa_fee_frequency", "association_fee_frequency", "hoa_frequency", "fee_frequency", "hoa_fee_period"],
   daysOnMarket: ["dom", "days_on_market", "daysonmarket"], listedAt: ["listed_at", "list_date", "listing_date"],
   status: ["status", "listing_status", "mls_status"], url: ["url", "listing_url", "link"],
   primaryPhoto: ["photo", "primary_photo", "image", "img"], description: ["description", "remarks", "public_remarks"],
@@ -143,7 +145,15 @@ export function parseListingRow(row: Record<string, string>): ParsedListing | nu
   // returns VERIFIED_NO_HOA when an explicit hoa_verified column vouches for it;
   // a bare "false" or a $0 fee leaves the status HOA_UNKNOWN, which is what the
   // eligibility engine then reports.
-  const hoaFee = num(pick(row, "hoaFeeMonthly"));
+  // An MLS export names this `association_fee` and very often states it
+  // ANNUALLY. Read as monthly, a $1,200 annual fee becomes a $14,400 yearly
+  // carrying cost — a 12x error that looks entirely plausible on the page.
+  // When the export carries a frequency column, convert by it. With no
+  // frequency the number is taken as monthly, which is what the column name
+  // asserts and what the template documents.
+  const rawFee = pick(row, "hoaFeeMonthly");
+  const freq = pick(row, "hoaFeeFrequency");
+  const hoaFee = freq ? monthlyFee(rawFee, freq) : num(rawFee);
   const hoaStatus = hoaStatusFrom({
     fee: hoaFee,
     flag: bool(pick(row, "hoa")),
