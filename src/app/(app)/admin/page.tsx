@@ -12,6 +12,7 @@ export default function AdminPage() {
   const [payload, setPayload] = useState(""); const [fmt, setFmt] = useState<"csv" | "json">("csv");
   const [elig, setElig] = useState<Record<string, number> | null>(null);
   const [fullSync, setFullSync] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
   const [sixgenProps, setSixgenProps] = useState<File | null>(null);
   const [sixgenMonthly, setSixgenMonthly] = useState<File | null>(null);
   const say = (m: string) => setLog((l) => [`${new Date().toLocaleTimeString()} — ${m}`, ...l].slice(0, 50));
@@ -37,13 +38,13 @@ export default function AdminPage() {
     setBusy("refresh");
     try {
       const j = await (await fetch("/api/listings/refresh", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ market: "lexington-ky", format: fmt, input: payload, fullSync }) })).json();
+        body: JSON.stringify({ market: "lexington-ky", format: fmt, input: payload, fullSync, note: fileName }) })).json();
       if (j.error) say(`❌ ${j.error}`);
       else {
         say(`✅ ${j.received} received · ${j.message}`);
         say(`   ${j.qualified} pass the hard filters · ${j.needsHoaVerification} need HOA verification · ${j.rescreened} re-screened`);
         for (const c of (j.changes ?? []).slice(0, 12)) say(`   ${c.kind}: ${c.address ?? c.externalId} — ${c.reason}`);
-        setPayload(""); await loadElig();
+        setPayload(""); setFileName(null); await loadElig();
       }
     } catch (e: any) { say(`❌ ${e.message}`); } setBusy(null);
   }
@@ -90,8 +91,35 @@ export default function AdminPage() {
 
         <Card><CardHeader title="2 · 🔄 Refresh Lexington listings" subtitle="Diffs against what is stored: new · price change · relisted · removed, then re-screens what changed" />
           <CardBody>
+            {/* The weekly path. An MLS export is a file; making the operator open
+                it and paste its contents is the step most likely to be skipped,
+                truncated, or done against last week's download by mistake. */}
+            <label className="mb-3 block rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
+              <span className="block text-xs font-semibold text-navy">Weekly MLS export</span>
+              <span className="mb-2 block text-[11px] text-slate-500">
+                Pick the CSV you downloaded from ImagineMLS. It is read in your browser and loaded below — nothing reaches the server until you press the refresh button.
+              </span>
+              <input
+                type="file"
+                accept=".csv,.txt,text/csv"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  const text = await f.text();
+                  setFmt("csv");
+                  setPayload(text);
+                  setFileName(f.name);
+                  const rows = text.trim().split(/\r?\n/).length - 1;
+                  say(`📄 ${f.name} — ${rows} data row${rows === 1 ? "" : "s"} ready. Tick "complete active set" below if this is the whole export, then run the refresh.`);
+                  e.target.value = "";   // so re-picking the same file still fires
+                }}
+                className="w-full text-xs"
+              />
+              {fileName && <span className="mt-1 block text-[11px] text-slate-600">Loaded: <b>{fileName}</b></span>}
+            </label>
+
             <div className="mb-2 flex gap-3 text-xs">{(["csv", "json"] as const).map((f) => <label key={f} className="flex items-center gap-1"><input type="radio" checked={fmt === f} onChange={() => setFmt(f)} />{f.toUpperCase()}</label>)}</div>
-            <textarea value={payload} onChange={(e) => setPayload(e.target.value)} placeholder={fmt === "csv" ? "id,address,lat,lng,price,beds,baths,sqft,hoa,hoa_fee,status,url\n123,697 Cindy Blair Way 40503,37.9969,-84.5563,649900,4,4,2793,false,0,active,https://…" : '[{"id":"123","address":"697 Cindy Blair Way 40503","lat":37.9969,"lng":-84.5563,"price":649900,"beds":4}]'} className="mb-2 h-28 w-full rounded-lg border border-slate-300 p-2 font-mono text-[11px]" />
+            <textarea value={payload} onChange={(e) => { setPayload(e.target.value); setFileName(null); }} placeholder={fmt === "csv" ? "id,address,lat,lng,price,beds,baths,sqft,hoa,hoa_fee,status,url\n123,697 Cindy Blair Way 40503,37.9969,-84.5563,649900,4,4,2793,false,0,active,https://…" : '[{"id":"123","address":"697 Cindy Blair Way 40503","lat":37.9969,"lng":-84.5563,"price":649900,"beds":4}]'} className="mb-2 h-28 w-full rounded-lg border border-slate-300 p-2 font-mono text-[11px]" />
             <label className="mb-2 flex items-start gap-2 text-xs text-slate-600">
               <input type="checkbox" checked={fullSync} onChange={(e) => setFullSync(e.target.checked)} className="mt-0.5" />
               <span>This payload is the <b>complete</b> active set — mark anything missing from it as removed.
