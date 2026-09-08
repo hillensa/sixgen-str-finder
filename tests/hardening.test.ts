@@ -284,3 +284,20 @@ test("REGRESSION: robots.txt is not swallowed by the auth redirect", () => {
   assert.equal(re.test("/dashboard"), true, "a real page must still be gated");
   assert.equal(re.test("/api/pipeline"), true, "an API route must still be gated");
 });
+
+test("REGRESSION: map layers redraw once Leaflet has finished loading", () => {
+  // MapView imports Leaflet dynamically, so the map may not exist when data
+  // arrives. Each layer effect returns early in that case; without a readiness
+  // flag in its deps nothing re-runs it, and the layer never draws. Locally
+  // Leaflet was warm and won the race — in production its chunk is a cold fetch
+  // while /api/market is fast, so 738 permits arrived first and no pin appeared.
+  const src = readFileSync(join(__dirname, "..", "src", "components", "MapView.tsx"), "utf8");
+  assert.ok(/setReady\(true\)/.test(src), "map init must signal readiness");
+
+  const deps = [...src.matchAll(/\}, \[([^\]]*)\]\);/g)].map((m) => m[1]);
+  const layerDeps = deps.filter((d) => /permits|exclusion|highlight|layers\./.test(d));
+  assert.ok(layerDeps.length >= 4, `expected the layer effects, found ${layerDeps.length}`);
+  for (const d of layerDeps) {
+    assert.ok(/\bready\b/.test(d), `a layer effect does not depend on ready: [${d}]`);
+  }
+});

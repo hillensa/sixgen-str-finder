@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type PermitPin = { id: number; address_norm: string | null; address_raw: string | null; str_type: string | null; is_blocking: boolean | null; lat: number; lng: number; source: string | null };
 export type Layers = { exclusion: boolean; permits: boolean; parcels: boolean; zoning: boolean; boundary: boolean };
@@ -16,6 +16,13 @@ const zoneColor = (z: string) => /^R-1|^R-2$|^R-3$|^R-4$|^R-5$|^R-1T|^EAR/.test(
 export default function MapView({ center, zoom, jurisdictionId, permits, exclusion, layers, flyTo, onMapClick, highlight }: Props) {
   const el = useRef<HTMLDivElement>(null); const map = useRef<any>(null); const L = useRef<any>(null);
   const g = useRef<Record<string, any>>({}); const clickRef = useRef(onMapClick);
+  // Leaflet is imported dynamically, so the map may not exist when the data
+  // arrives. Every layer effect below bails out when it does not, and nothing
+  // re-ran them once it appeared: locally Leaflet was warm and won the race, in
+  // production its chunk is a cold fetch while /api/market is fast, so the
+  // permits arrived first and no pin was ever drawn. This flips when the panes
+  // and layer groups exist, and every effect depends on it.
+  const [ready, setReady] = useState(false);
   clickRef.current = onMapClick;
 
   useEffect(() => {
@@ -30,24 +37,25 @@ export default function MapView({ center, zoom, jurisdictionId, permits, exclusi
       mk("exclusion", 350, "0.42", "none"); mk("zoning", 360, "0.35"); mk("parcels", 380); mk("boundary", 390, undefined, "none"); mk("highlight", 440, undefined, "none"); mk("pins", 460);
       for (const k of ["exclusion", "zoning", "parcels", "boundary", "highlight", "permits"]) g.current[k] = leaflet.layerGroup().addTo(m);
       m.on("click", (e: any) => clickRef.current?.(e.latlng.lat, e.latlng.lng));
+      if (!dead) setReady(true);
     })();
-    return () => { dead = true; if (map.current) { map.current.remove(); map.current = null; } };
+    return () => { dead = true; setReady(false); if (map.current) { map.current.remove(); map.current = null; } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { const l = L.current, grp = g.current.exclusion; if (!l || !grp) return; grp.clearLayers();
     if (exclusion && layers.exclusion) l.geoJSON(exclusion, { pane: "exclusion", interactive: false, style: { color: "#c1121f", weight: 1, fillColor: "#c1121f", fillOpacity: 1 } }).addTo(grp);
-  }, [exclusion, layers.exclusion]);
+  }, [ready, exclusion, layers.exclusion]);
 
   useEffect(() => { const l = L.current, grp = g.current.permits; if (!l || !grp) return; grp.clearLayers(); if (!layers.permits) return;
     for (const p of permits) l.circleMarker([p.lat, p.lng], { pane: "pins", radius: 5, color: "#fff", weight: 1.5, fillColor: p.is_blocking ? "#14213d" : "#6b7280", fillOpacity: 1 })
       .bindTooltip(`<b>${p.address_norm ?? p.address_raw}</b><br>${p.str_type ?? "type unknown"} · ${p.is_blocking ? "counts toward spacing" : "not blocking"}`, { direction: "top", offset: [0, -6] })
       .bindPopup(`<b>${p.address_norm ?? p.address_raw}</b><br>Existing STR permit<br>Type: ${p.str_type ?? "unknown"}<br>Blocking: ${p.is_blocking ? "yes" : "no"}<br><small>Source: ${p.source}</small>`).addTo(grp);
-  }, [permits, layers.permits]);
+  }, [ready, permits, layers.permits]);
 
   useEffect(() => { const l = L.current, grp = g.current.highlight; if (!l || !grp) return; grp.clearLayers();
     if (highlight) l.geoJSON(highlight, { pane: "highlight", style: { color: "#00b4d8", weight: 3, fillColor: "#00b4d8", fillOpacity: 0.15 } }).addTo(grp);
-  }, [highlight]);
+  }, [ready, highlight]);
 
   // viewport-scoped overlays
   useEffect(() => {
@@ -68,8 +76,8 @@ export default function MapView({ center, zoom, jurisdictionId, permits, exclusi
       load(); m.on("moveend", load); return load;
     });
     return () => { loaders.forEach((fn) => m.off("moveend", fn)); };
-  }, [layers.parcels, layers.zoning, layers.boundary, jurisdictionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, layers.parcels, layers.zoning, layers.boundary, jurisdictionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { if (flyTo && map.current) map.current.flyTo([flyTo.lat, flyTo.lng], flyTo.zoom ?? 17); }, [flyTo]);
+  useEffect(() => { if (flyTo && map.current) map.current.flyTo([flyTo.lat, flyTo.lng], flyTo.zoom ?? 17); }, [ready, flyTo]);
   return <div ref={el} className="h-full w-full" />;
 }
