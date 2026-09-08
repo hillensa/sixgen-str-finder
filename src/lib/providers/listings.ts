@@ -225,13 +225,36 @@ export class JsonProvider implements ListingsProvider {
   }
 }
 
-/** Placeholder for an authorized RESO Web API feed (Phase 4+). Throws until configured. */
+/**
+ * RESO Web API (OData) feed — Spark / flexmls, and any other compliant server.
+ * Field mapping and paging live in ./reso.ts; this is just the provider seam.
+ */
 export class ResoWebApiProvider implements ListingsProvider {
   readonly id = "reso";
-  constructor(private baseUrl = process.env.RESO_API_URL, private token = process.env.RESO_API_TOKEN) {}
-  async searchListings(): Promise<NormalizedListing[]> {
-    if (!this.baseUrl || !this.token) throw new Error("RESO provider not configured (RESO_API_URL / RESO_API_TOKEN)");
-    throw new Error("RESO adapter scheduled for Phase 4 once MLS credentials are issued");
+  constructor(
+    private baseUrl = process.env.RESO_API_URL,
+    private token = process.env.RESO_API_TOKEN,
+    private filter = process.env.RESO_FILTER,
+  ) {}
+
+  async searchListings(): Promise<ParsedListing[]> {
+    // "Not configured" is a different failure from "the feed returned nothing",
+    // and they must not collapse into one another: an empty pull treated as a
+    // real result would read as every listing having been withdrawn.
+    if (!this.baseUrl || !this.token) {
+      throw new Error("RESO provider not configured (set RESO_API_URL and RESO_API_TOKEN)");
+    }
+    const { fetchResoListings, resoToListing } = await import("./reso");
+    const { rows, truncated } = await fetchResoListings({
+      baseUrl: this.baseUrl, token: this.token, filter: this.filter,
+    });
+    if (truncated) {
+      throw new Error(
+        "The RESO filter matched more rows than the safety ceiling, so this pull is partial. "
+        + "Narrow RESO_FILTER before importing — a partial set looks like mass withdrawals on a full sync.",
+      );
+    }
+    return rows.map(resoToListing).filter((x): x is ParsedListing => !!x);
   }
 }
 
