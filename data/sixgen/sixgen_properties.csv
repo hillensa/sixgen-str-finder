@@ -1,0 +1,18 @@
+guesty_id,name,address,zip,lat,lng,beds,baths,max_guests,property_type,active,hot_tub,golf_sim,game_room,pool,fire_pit,pool_table,tags
+63c19733d0eeec00353b9e72,300 Sherman Ave,"300 Sherman Ave, Lexington, KY 40502, USA",40502,38.0330371,-84.4711148,7,6.5,12,House,true,true,false,false,false,false,false,Hot Tub;Lexington
+612f8f8e7ab24d002e921402,1934 Natchez Trl,"1934 Natchez Trail, Lexington, Kentucky 40504, United States",40504,38.033268,-84.543793,4,2.5,12,House,true,false,false,false,false,true,false,Firepit;Outdoor Deck;Lexington
+612f8f8e7f2b45002ce6a9f5,485 Cromwell Way,"485 Cromwell Way, Lexington, Kentucky 40503, United States",40503,37.985058,-84.547462,4,2.5,12,House,true,false,false,false,false,false,false,Games;Lexington
+64aeb90d14fd0b00355fb248,341 Sherman Ave,"341 Sherman Avenue, Lexington, KY 40502-1557, United States",40502,38.0342297,-84.4701147,5,4.5,12,House,true,true,true,true,false,false,false,Hot Tub;Golf Simulator;Game room;Lexington
+621807ca36872800321be39b,1810 Clays Mill Rd,"1810 Clays Mill Rd, Lexington, KY 40503, USA",40503,38.0273819,-84.5303611,5,3,12,House,true,true,true,true,false,true,false,Hot Tub;Garage Game Room;Wood Firepit;Lexington
+627e5f92315c0400325919d4,353 Owsley Ave,"353 Owsley Ave, Lexington, KY 40502, USA",40502,38.0375467,-84.4722875,5,3.5,12,House,true,true,true,true,false,true,false,Hot Tub;Golf Simulator;Game room;Lexington
+63c184e179b131003840d916,340 Lincoln Ave,"340 Lincoln Ave, Lexington, KY 40502, USA",40502,38.0360964,-84.4721235,5,4.5,10,House,true,true,true,true,false,false,true,Hot Tub;Golf Simulator;Game room;Lexington
+62c1db166e44610032138352,468 N MLK,"468 N Martin Luther King Blvd, Lexington, KY 40508, USA",40508,38.0506716,-84.4867571,5,3,12,House,true,true,true,true,false,false,false,Hot Tub;Golf Simulator;Putting green;Lexington
+612f903744667c003131de02,617 Stratford Dr,"617 Stratford Dr, Lexington, KY 40503, USA",40503,38.0195226,-84.5358673,2,1,6,House,true,false,false,false,false,false,false,Patio;Grill;Lexington
+612f8f9fd82e24002f2559c1,270 Hill N Dale Dr,"270 Hill N Dale Road, Lexington, Kentucky 40503, United States",40503,38.010181,-84.532272,5,2,12,House,true,true,false,false,false,true,false,Hot Tub;Wood Firepit;Lexington
+61805d5df96837002f3df4c4,336 Owsley Ave,"336 Owsley Avenue, Lexington, Kentucky 40502, United States",40502,38.036789,-84.473145,5,3.5,12,House,true,true,false,true,false,true,false,Hot Tub;Firepit;Game room;Lexington
+612f90367f2b45002ce6d271,668 Springridge Dr,"668 Springridge Dr, Lexington, KY 40503, USA",40503,38.0228702,-84.5375974,6,3.5,12,House,true,true,false,false,false,true,false,Hot Tub;Patio;Grill;Lexington
+612f8f947f2b45002ce6af09,687 Hill N Dale Rd,"687 Hill N Dale Road, Lexington, Kentucky 40503, United States",40503,38.017204,-84.544312,5,3,12,House,true,true,false,false,false,false,false,Hot Tub;Grill;Patio;Lexington
+684ad0a066e4f400133871e1,720 W Short St,"720 W Short St, Lexington, KY 40508, USA",40508,38.0538394,-84.5044189,3,2.5,6,House,true,true,false,false,false,true,false,Hot Tub;Firepit;Patio;Lexington
+612f903e7f2b45002ce6d8ab,834 Melrose Ave,"834 Melrose Ave, Lexington, Kentucky 40502, United States",40502,38.026302,-84.492348,3,2.5,8,House,true,true,false,true,false,true,false,Hot Tub;Game room;Patio;Firepit;Lexington
+612f8f5a450c7f0031879d72,3141 Lamar Dr,"3141 Lamar Drive, Lexington, Kentucky 40502, United States",40502,38.001316,-84.492271,5,3.5,12,House,true,true,false,true,true,false,false,Hot Tub;Pool;Game room;Lexington
+612f8f737f2b45002ce6a5ec,1105 Kees Rd,"1105 Kees Rd, Lexington, KY 40505, USA",40505,38.0639946,-84.4826584,4,2,12,House,true,false,false,false,false,false,false,Lexington

@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import "leaflet/dist/leaflet.css";
+html, body { height: 100%; }
+body { @apply bg-slate-50 text-slate-900 antialiased; }
+.leaflet-popup-content { font-size: 12.5px; line-height: 1.5; margin: 10px 12px; }
+.leaflet-tooltip { font-size: 12px; line-height: 1.45; }
+.leaflet-container { font-family: inherit; }

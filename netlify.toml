@@ -1,0 +1,36 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Netlify's synchronous function ceiling is 26 s. Several routes in this app do
+# far more work than that — the permit import geocodes ~1,000 addresses, and the
+# city GIS sync rebuilds the dissolved exclusion in PostGIS. They are batched and
+# safe to re-run, but they WILL time out here.
+#
+# See docs/RUNBOOK.md, "Long-running operations". In short: run those from a
+# machine with the IMPORT_SECRET bearer token, or deploy on a host that allows a
+# longer function duration. The interactive pages are all well inside 26 s.
+[functions."___netlify-server-handler"]
+  timeout = 26
+
+# Defense in depth: middleware sets these too, but a static or cached response
+# can bypass middleware.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    Content-Security-Policy = "frame-ancestors 'none'"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-store"

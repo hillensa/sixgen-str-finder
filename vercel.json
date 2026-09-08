@@ -1,0 +1,14 @@
+{
+  "functions": {
+    "src/app/api/refresh/route.ts": { "maxDuration": 300 },
+    "src/app/api/imports/permits/analyze/route.ts": { "maxDuration": 60 },
+    "src/app/api/imports/permits/commit/route.ts": { "maxDuration": 300 },
+    "src/app/api/exclusions/rebuild/route.ts": { "maxDuration": 120 },
+    "src/app/api/eligibility/rerun/route.ts": { "maxDuration": 300 },
+    "src/app/api/listings/refresh/route.ts": { "maxDuration": 300 },
+    "src/app/api/listings/import/route.ts": { "maxDuration": 300 },
+    "src/app/api/sixgen/import/route.ts": { "maxDuration": 300 },
+    "src/app/api/forecasts/route.ts": { "maxDuration": 300 },
+    "src/app/api/scores/route.ts": { "maxDuration": 300 }
+  }
+}

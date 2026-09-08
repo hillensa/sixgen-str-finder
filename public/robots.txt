@@ -1,0 +1,9 @@
+# This is a private acquisition-screening tool, not a public page.
+#
+# Every route behind /login is gated by magic-link auth against the
+# `allowed_emails` allowlist, so a crawler cannot reach the data. The login page
+# itself is reachable, though, and there is no reason for it to appear in search
+# results next to the public sixgenrentals.com site.
+
+User-agent: *
+Disallow: /
