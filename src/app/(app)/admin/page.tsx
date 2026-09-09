@@ -105,7 +105,13 @@ export default function AdminPage() {
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
                   if (!f) return;
-                  const text = await f.text();
+                  // flexmls exports are Windows-1252, not UTF-8 — a single ± or
+                  // é in the public remarks is enough to corrupt or reject the
+                  // whole file under f.text(), which assumes UTF-8.
+                  const buf = await f.arrayBuffer();
+                  let text: string;
+                  try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+                  catch { text = new TextDecoder("windows-1252").decode(buf); say(`ℹ ${f.name} is not UTF-8 — decoded as Windows-1252.`); }
                   setFmt("csv");
                   setPayload(text);
                   setFileName(f.name);

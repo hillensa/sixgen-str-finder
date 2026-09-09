@@ -60,23 +60,33 @@ export interface ListingsProvider {
 
 // ---------------- CSV provider (launch fallback) ----------------
 const HEADER_ALIASES: Record<string, string[]> = {
-  externalId: ["id", "listing_id", "listingid", "mls", "mls_number", "mlsnumber", "zpid"],
-  address: ["address", "street_address", "full_address", "property_address"],
+  externalId: ["id", "listing_id", "listingid", "mls", "mls_number", "mlsnumber", "zpid",
+    "listing_number", "listing_key", "ml_num"],
+  address: ["address", "street_address", "full_address", "property_address",
+    "short_address", "unparsed_address"],
   zip: ["zip", "zipcode", "postal_code", "zip_code"],
   lat: ["lat", "latitude"], lng: ["lng", "lon", "long", "longitude"],
   price: ["price", "list_price", "listprice", "asking_price"],
-  originalPrice: ["original_price", "originalprice", "orig_price"],
-  beds: ["beds", "bedrooms", "br", "bd"], baths: ["baths", "bathrooms", "ba"],
-  sqft: ["sqft", "square_feet", "living_area", "area"], lotSqft: ["lot_sqft", "lot_size_sqft", "lotsize"],
-  yearBuilt: ["year_built", "yearbuilt", "built"], propertyType: ["property_type", "type", "home_type"],
+  originalPrice: ["original_price", "originalprice", "orig_price", "original_list_price"],
+  beds: ["beds", "bedrooms", "br", "bd", "bedrooms_total"],
+  baths: ["baths", "bathrooms", "ba", "bathrooms_full", "bathrooms_total"],
+  sqft: ["sqft", "square_feet", "living_area", "area"],
+  lotSqft: ["lot_sqft", "lot_size_sqft", "lotsize", "lot_size_square_feet"],
+  lotAcres: ["lot_size_acres", "acres", "lot_acres"],
+  yearBuilt: ["year_built", "yearbuilt", "built"],
+  propertyType: ["property_type", "type", "home_type", "property_sub_type"],
+  parcelNumber: ["parcel_number", "parcel_id", "pva_id", "pvanum", "tax_id"],
   stories: ["stories", "levels"], garage: ["garage"], pool: ["pool"], basement: ["basement"], finishedBasement: ["finished_basement"],
-  hoa: ["hoa", "has_hoa"], hoaVerified: ["hoa_verified", "hoa_confirmed"], unit: ["unit", "apt", "suite"],
+  hoa: ["hoa", "has_hoa", "association_yn"],
+  hoaMandatory: ["association_mandatory_yn", "hoa_mandatory"],
+  hoaVerified: ["hoa_verified", "hoa_confirmed"], unit: ["unit", "apt", "suite", "unit_number"],
   hoaFeeMonthly: ["hoa_fee", "hoa_monthly", "hoa_fee_monthly", "association_fee"], hoaName: ["hoa_name", "association_name"],
   hoaFeeFrequency: ["hoa_fee_frequency", "association_fee_frequency", "hoa_frequency", "fee_frequency", "hoa_fee_period"],
-  daysOnMarket: ["dom", "days_on_market", "daysonmarket"], listedAt: ["listed_at", "list_date", "listing_date"],
+  daysOnMarket: ["dom", "days_on_market", "daysonmarket"], listedAt: ["listed_at", "list_date", "listing_date", "listing_contract_date", "on_market_date"],
   status: ["status", "listing_status", "mls_status"], url: ["url", "listing_url", "link"],
   primaryPhoto: ["photo", "primary_photo", "image", "img"], description: ["description", "remarks", "public_remarks"],
-  brokerage: ["brokerage", "office", "listing_office"], agent: ["agent", "listing_agent"],
+  brokerage: ["brokerage", "office", "listing_office"],
+  agent: ["agent", "listing_agent", "listing_member"],
 };
 
 export function parseCsv(text: string): Record<string, string>[] {
@@ -156,7 +166,9 @@ export function parseListingRow(row: Record<string, string>): ParsedListing | nu
   const hoaFee = freq ? monthlyFee(rawFee, freq) : num(rawFee);
   const hoaStatus = hoaStatusFrom({
     fee: hoaFee,
-    flag: bool(pick(row, "hoa")),
+    // "Association Mandatory YN" is the field that matters: a mandatory HOA is
+    // the kind that can forbid short-term rental. Treat it as presence when set.
+    flag: bool(pick(row, "hoaMandatory")) === true ? true : bool(pick(row, "hoa")),
     verified: bool(pick(row, "hoaVerified")) === true,
   });
   const statusRaw = (pick(row, "status") ?? "active").toLowerCase();
@@ -180,7 +192,10 @@ export function parseListingRow(row: Record<string, string>): ParsedListing | nu
     unit,
     zip: pick(row, "zip") ?? parsed.zip ?? (address.match(/\b(\d{5})\b\s*$/)?.[1] ?? null),
     lat, lng, price: num(pick(row, "price")), originalPrice: num(pick(row, "originalPrice")),
-    beds: num(pick(row, "beds")), baths: num(pick(row, "baths")), sqft: num(pick(row, "sqft")), lotSqft: num(pick(row, "lotSqft")),
+    beds: num(pick(row, "beds")), baths: num(pick(row, "baths")), sqft: num(pick(row, "sqft")),
+    // an export may publish square feet, acres, or both
+    lotSqft: num(pick(row, "lotSqft"))
+      ?? (num(pick(row, "lotAcres")) != null ? Math.round(num(pick(row, "lotAcres"))! * 43560) : null),
     yearBuilt: num(pick(row, "yearBuilt")), propertyType: pick(row, "propertyType") ?? null, stories: num(pick(row, "stories")),
     garage: bool(pick(row, "garage")), pool: bool(pick(row, "pool")), basement: bool(pick(row, "basement")), finishedBasement: bool(pick(row, "finishedBasement")),
     hoaStatus, hoaFeeMonthly: hoaFee, hoaName: pick(row, "hoaName") ?? null,

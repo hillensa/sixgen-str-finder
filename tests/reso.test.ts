@@ -167,3 +167,51 @@ test("REGRESSION: a CSV fee frequency column is honoured, not ignored", async ()
   assert.equal(parseListingRow({ ...base, hoa_fee: "150" })!.hoaFeeMonthly, 150, "no frequency column keeps the documented monthly reading");
   assert.equal(parseListingRow({ ...base, hoa_fee: "1200", hoa_fee_frequency: "Who Knows" })!.hoaFeeMonthly, null, "an unreadable cadence is not a guess");
 });
+
+// ── real ImagineMLS export columns ──────────────────────────────────────────
+test("REGRESSION: a real flexmls export maps, not just our own template", async () => {
+  // Column names taken verbatim from an ImagineMLS "Custom Text Export".
+  // Every one of these differed from the importer's original aliases, so the
+  // first real export would have produced rows with an address and nothing else.
+  const { parseCsv, parseListingRow } = await import("../src/lib/providers/listings");
+  const csv = [
+    '"Listing Number","Days On Market","Listing Member","Listing Office","Short Address",'
+    + '"Association Fee","Association Fee Frequency","Association Mandatory YN","Association YN",'
+    + '"Bathrooms Full","Bathrooms Total","Bedrooms Total","City","County","List Price",'
+    + '"Listing Contract Date","Living Area","Lot Size Acres","Lot Size Square Feet",'
+    + '"Original List Price","Parcel Number","Property Sub Type","Public Remarks","Status",'
+    + '"Unit Number","Year Built","Zip Code"',
+    '"26009839","127","Michael McNeill","Bluegrass Sotheby\'s","3495 Jacob Court",'
+    + '"200.00","Annually","Y","Y","3","4.00","5","Lexington","Fayette","689900.00",'
+    + '"2026-05-04","4731.00","0.1920","8364.0000","699900.00","38256310","SF","A house.","A",'
+    + '"","2015","40509"',
+  ].join("\n");
+  const l = parseListingRow(parseCsv(csv)[0])!;
+
+  assert.equal(l.externalId, "26009839", "Listing Number is the identity");
+  assert.equal(l.address, "3495 Jacob Court");
+  assert.equal(l.zip, "40509");
+  assert.equal(l.beds, 5);
+  assert.equal(l.baths, 3, "Bathrooms Full is preferred over Total");
+  assert.equal(l.sqft, 4731);
+  assert.equal(l.lotSqft, 8364);
+  assert.equal(l.yearBuilt, 2015);
+  assert.equal(l.price, 689900);
+  assert.equal(l.originalPrice, 699900);
+  assert.equal(l.daysOnMarket, 127);
+  assert.equal(l.listedAt, "2026-05-04");
+  assert.equal(l.status, "active", "flexmls publishes 'A', not 'Active'");
+  assert.equal(l.propertyType, "SF");
+  assert.equal(l.agent, "Michael McNeill");
+  assert.equal(l.raw.parcel_number, "38256310");
+
+  // 90 of the 101 fee-bearing rows in the real export are ANNUAL
+  assert.equal(l.hoaFeeMonthly, 16.67, "$200/yr is $16.67/mo, not $200/mo");
+  assert.equal(l.hoaStatus, "HOA_PRESENT");
+});
+
+test("lot size falls back to acres when square feet is absent", async () => {
+  const { parseCsv, parseListingRow } = await import("../src/lib/providers/listings");
+  const csv = '"Short Address","Lot Size Acres"\n"1 Main St","0.5206"';
+  assert.equal(parseListingRow(parseCsv(csv)[0])!.lotSqft, 22677);
+});
