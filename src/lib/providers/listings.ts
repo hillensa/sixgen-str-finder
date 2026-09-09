@@ -113,6 +113,21 @@ function pick(row: Record<string, string>, field: string): string | undefined {
 const num = (v?: string) => { if (v == null || v === "") return null; const n = Number(String(v).replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : null; };
 
 /**
+ * A whole number, for the columns Postgres types as `int`.
+ *
+ * flexmls publishes decimals in fields that are conceptually integers — lot
+ * size arrives as "8364.0000", and a genuinely fractional 2.91-acre lot becomes
+ * 126759.6 square feet. Handed to an int column that is a write error, and the
+ * whole row is rejected: 95 of 162 listings failed this way on the first real
+ * import. Rounding is right here — nobody underwrites a half square foot, or a
+ * fractional dollar of monthly HOA dues.
+ */
+const int = (v?: string | null): number | null => {
+  const n = typeof v === "number" ? v : num(v as any);
+  return n == null ? null : Math.round(n);
+};
+
+/**
  * Tri-state boolean. The old two-state version returned `false` for anything it
  * did not recognise, so a CSV carrying "unknown", "N/A" or "-" read as a hard
  * NO. For HOA that meant asserting VERIFIED_NO_HOA on no evidence at all.
@@ -163,7 +178,8 @@ export function parseListingRow(row: Record<string, string>): ParsedListing | nu
   // asserts and what the template documents.
   const rawFee = pick(row, "hoaFeeMonthly");
   const freq = pick(row, "hoaFeeFrequency");
-  const hoaFee = freq ? monthlyFee(rawFee, freq) : num(rawFee);
+  const converted = freq ? monthlyFee(rawFee, freq) : num(rawFee);
+  const hoaFee = converted == null ? null : Math.round(converted);
   const hoaStatus = hoaStatusFrom({
     fee: hoaFee,
     // "Association Mandatory YN" is the field that matters: a mandatory HOA is
@@ -192,14 +208,14 @@ export function parseListingRow(row: Record<string, string>): ParsedListing | nu
     unit,
     zip: pick(row, "zip") ?? parsed.zip ?? (address.match(/\b(\d{5})\b\s*$/)?.[1] ?? null),
     lat, lng, price: num(pick(row, "price")), originalPrice: num(pick(row, "originalPrice")),
-    beds: num(pick(row, "beds")), baths: num(pick(row, "baths")), sqft: num(pick(row, "sqft")),
+    beds: int(pick(row, "beds")), baths: num(pick(row, "baths")), sqft: int(pick(row, "sqft")),
     // an export may publish square feet, acres, or both
-    lotSqft: num(pick(row, "lotSqft"))
+    lotSqft: int(pick(row, "lotSqft"))
       ?? (num(pick(row, "lotAcres")) != null ? Math.round(num(pick(row, "lotAcres"))! * 43560) : null),
-    yearBuilt: num(pick(row, "yearBuilt")), propertyType: pick(row, "propertyType") ?? null, stories: num(pick(row, "stories")),
+    yearBuilt: int(pick(row, "yearBuilt")), propertyType: pick(row, "propertyType") ?? null, stories: int(pick(row, "stories")),
     garage: bool(pick(row, "garage")), pool: bool(pick(row, "pool")), basement: bool(pick(row, "basement")), finishedBasement: bool(pick(row, "finishedBasement")),
     hoaStatus, hoaFeeMonthly: hoaFee, hoaName: pick(row, "hoaName") ?? null,
-    daysOnMarket: num(pick(row, "daysOnMarket")),
+    daysOnMarket: int(pick(row, "daysOnMarket")),
     // Validated, not passed through. A ragged CSV row shifts columns left and
     // sends something like "active" into this field; unvalidated it reaches
     // Postgres as a date literal and 500s the whole import mid-write.

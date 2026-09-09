@@ -206,7 +206,9 @@ test("REGRESSION: a real flexmls export maps, not just our own template", async 
   assert.equal(l.raw.parcel_number, "38256310");
 
   // 90 of the 101 fee-bearing rows in the real export are ANNUAL
-  assert.equal(l.hoaFeeMonthly, 16.67, "$200/yr is $16.67/mo, not $200/mo");
+  // $200/yr is $16.67/mo, rounded to 17 because hoa_fee_monthly is an int
+  // column. The point stands: it is not $200/mo.
+  assert.equal(l.hoaFeeMonthly, 17);
   assert.equal(l.hoaStatus, "HOA_PRESENT");
 });
 
@@ -214,4 +216,27 @@ test("lot size falls back to acres when square feet is absent", async () => {
   const { parseCsv, parseListingRow } = await import("../src/lib/providers/listings");
   const csv = '"Short Address","Lot Size Acres"\n"1 Main St","0.5206"';
   assert.equal(parseListingRow(parseCsv(csv)[0])!.lotSqft, 22677);
+});
+
+test("REGRESSION: decimal values reach integer columns as whole numbers", async () => {
+  // flexmls publishes "8364.0000" for lot size and, for a 2.91-acre lot,
+  // 126759.6. Postgres types lot_sqft, sqft, beds, year_built, days_on_market
+  // and hoa_fee_monthly as int, so a fractional value is a write error that
+  // rejects the entire row — 95 of 162 listings failed this way on the first
+  // real import, and the message named only the HOA fee.
+  const { parseCsv, parseListingRow } = await import("../src/lib/providers/listings");
+  const csv = [
+    '"Short Address","Lot Size Square Feet","Living Area","Bedrooms Total","Year Built",'
+    + '"Days On Market","Association Fee","Association Fee Frequency"',
+    '"1 Main St","126759.6000","4731.00","5","2015","127","200.00","Annually"',
+  ].join("\n");
+  const l = parseListingRow(parseCsv(csv)[0])!;
+  for (const [k, v] of Object.entries({
+    lotSqft: l.lotSqft, sqft: l.sqft, beds: l.beds,
+    yearBuilt: l.yearBuilt, daysOnMarket: l.daysOnMarket, hoaFeeMonthly: l.hoaFeeMonthly,
+  })) {
+    assert.equal(Number.isInteger(v as number), true, `${k} must be a whole number, got ${v}`);
+  }
+  assert.equal(l.lotSqft, 126760);
+  assert.equal(l.hoaFeeMonthly, 17, "$200/yr rounds to $17/mo — cents do not survive an int column");
 });
