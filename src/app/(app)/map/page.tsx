@@ -44,7 +44,52 @@ export default function MapPage() {
         {res.length > 0 && <div className="mt-1 max-h-56 overflow-auto rounded-lg bg-white shadow-xl">{res.map((r) => <div key={r.address} onClick={() => { setFlyTo({ lat: r.lat, lng: r.lng, zoom: 18, nonce: Date.now() }); setRes([]); setQ(r.address); probeAt(r.lat, r.lng); }} className="cursor-pointer border-b border-slate-100 px-3 py-2 text-xs hover:bg-slate-50">{r.address}</div>)}</div>}
       </div>
 
-      <div className="absolute right-3 top-3 z-[1200] w-[220px] rounded-lg bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
+      {/* The ranked list, beside the map rather than on another page: the
+          question "which of these is worth driving to" needs the position and
+          the yield in one view. Clicking a row flies to its pin. */}
+      {candidates.length > 0 && layers.candidates && (
+        <div className="absolute right-3 top-3 z-[1200] flex max-h-[calc(100%-1.5rem)] w-[310px] flex-col rounded-lg bg-white/95 shadow-lg backdrop-blur">
+          <div className="border-b border-slate-200 px-3 py-2">
+            <div className="text-sm font-bold text-navy">Top {candidates.length}</div>
+            <div className="text-[10px] text-slate-500">
+              Gross yield = forecast revenue &divide; list price. Revenue is modelled from
+              Sixgen&apos;s own trailing twelve, before expenses and financing.
+            </div>
+          </div>
+          <div className="overflow-y-auto">
+            {candidates.map((c, i) => {
+              const rank = c.rank ?? i + 1;
+              const yieldPct = c.gross_yield_pct == null ? null : Number(c.gross_yield_pct);
+              const tone = c.classification === "GREEN" ? "pass" : c.classification === "RED" ? "fail" : "review";
+              return (
+                <button
+                  key={c.property_id}
+                  onClick={() => { setFlyTo({ lat: c.lat, lng: c.lng, zoom: 17, nonce: Date.now() }); probeAt(c.lat, c.lng); }}
+                  className="flex w-full items-start gap-2 border-b border-slate-100 px-3 py-2 text-left hover:bg-amber-50"
+                >
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">{rank}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-semibold text-navy">{c.address ?? "—"}</span>
+                    <span className="block text-[11px] text-slate-500">
+                      {c.list_price != null ? `$${Math.round(c.list_price).toLocaleString()}` : "—"}
+                      {c.beds ? ` · ${c.beds} bd` : ""}
+                      {c.forecast_revenue != null ? ` · fc $${Math.round(Number(c.forecast_revenue) / 1000)}k` : ""}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className={`block text-xs font-bold ${yieldPct != null && yieldPct >= 20 ? "text-green-700" : "text-navy"}`}>
+                      {yieldPct != null ? `${yieldPct.toFixed(1)}%` : "—"}
+                    </span>
+                    <Badge tone={tone as any}>{c.score == null ? "—" : Number(c.score).toFixed(0)}</Badge>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="absolute bottom-4 left-3 z-[1200] w-[236px] rounded-lg bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
         <div className="mb-1.5 font-bold text-navy">Layers</div>
         {([["candidates", `Top 25 candidates${candidates.length ? ` (${candidates.length})` : ""}`], ["permits", "Existing STRs"], ["exclusion", "600-ft regulatory buffers"], ["parcels", "Fayette parcels (zoom 16+)"], ["zoning", "Lexington zoning (zoom 13+)"], ["boundary", "County boundary"]] as const).map(([k, label]) => (
           <label key={k} className="mb-1 flex cursor-pointer items-center gap-2"><input type="checkbox" checked={layers[k]} onChange={(e) => setLayers((s) => ({ ...s, [k]: e.target.checked }))} />{label}</label>
@@ -54,7 +99,7 @@ export default function MapPage() {
       </div>
 
       {probe && (
-        <div className="absolute bottom-4 left-3 z-[1250] w-[330px] rounded-xl bg-white p-4 text-sm shadow-2xl">
+        <div className="absolute left-14 top-16 z-[1250] w-[330px] rounded-xl bg-white p-4 text-sm shadow-2xl">
           <div className="mb-2 flex items-center justify-between"><b className="text-navy">Parcel probe</b><button onClick={() => { setProbe(null); setHl(null); }} className="rounded-full bg-slate-100 px-2 text-xs">×</button></div>
           {probe.loading ? <div className="text-slate-500">Looking up parcel &amp; zoning…</div> : probe.error ? <div className="text-red-700">{probe.error}</div> : (
             <div className="space-y-1.5">

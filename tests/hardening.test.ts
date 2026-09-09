@@ -318,3 +318,16 @@ test("REGRESSION: candidates and permits are separate map layers", () => {
     "the map must read the same ranking endpoint as Top 25, so they cannot disagree");
   assert.ok(!/Phase 4/.test(page), "the placeholder note must be gone now that candidates render");
 });
+
+test("the map surfaces gross yield next to the address, not just the score", () => {
+  // A rank alone does not answer "is this worth buying". Yield is revenue over
+  // price, so it is the one number that makes a $450k and a $2.1m house
+  // comparable at a glance — #1 runs 34.8% while the most expensive runs 7.2%.
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "map", "page.tsx"), "utf8");
+  assert.ok(/gross_yield_pct/.test(page), "the list must show yield");
+  assert.ok(/forecast_revenue/.test(page), "and the revenue it came from");
+  assert.ok(/Sixgen&apos;s own trailing twelve|trailing twelve/.test(page),
+    "the panel must say the revenue is modelled from the portfolio, not a market average");
+  assert.ok(/before expenses and financing/.test(page),
+    "gross yield must be labelled gross — it is not a return");
+});
