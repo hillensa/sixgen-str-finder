@@ -301,3 +301,20 @@ test("REGRESSION: map layers redraw once Leaflet has finished loading", () => {
     assert.ok(/\bready\b/.test(d), `a layer effect does not depend on ready: [${d}]`);
   }
 });
+
+test("REGRESSION: candidates and permits are separate map layers", () => {
+  // A permit is a constraint that already exists; a candidate is a house you
+  // might buy. Drawing them alike, or coupling their toggles, would invite
+  // reading a competitor's STR as an opportunity.
+  const mv = readFileSync(join(__dirname, "..", "src", "components", "MapView.tsx"), "utf8");
+  assert.ok(/candidates: boolean/.test(mv), "the layer must be independently toggleable");
+  assert.ok(/g\.current\.candidates/.test(mv), "candidates need their own layer group");
+  assert.ok(/layers\.candidates/.test(mv), "the toggle must actually gate the draw");
+  assert.ok(!/layers\.permits && layers\.candidates|layers\.candidates && layers\.permits/.test(mv),
+    "the two layers must not be coupled");
+
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "map", "page.tsx"), "utf8");
+  assert.ok(/api\/scores\?market=/.test(page),
+    "the map must read the same ranking endpoint as Top 25, so they cannot disagree");
+  assert.ok(!/Phase 4/.test(page), "the placeholder note must be gone now that candidates render");
+});

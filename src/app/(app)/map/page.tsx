@@ -2,14 +2,24 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { Badge } from "@/components/ui/badge";
-import type { Layers, PermitPin } from "@/components/MapView";
+import type { Layers, PermitPin, CandidatePin } from "@/components/MapView";
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false, loading: () => <div className="flex h-full items-center justify-center text-slate-400">Loading map…</div> });
 
 export default function MapPage() {
   const [data, setData] = useState<any>(null); const [err, setErr] = useState<string | null>(null);
-  const [layers, setLayers] = useState<Layers>({ exclusion: true, permits: true, parcels: false, zoning: false, boundary: true });
+  const [layers, setLayers] = useState<Layers>({ exclusion: true, permits: true, candidates: true, parcels: false, zoning: false, boundary: true });
   const [flyTo, setFlyTo] = useState<any>(null); const [q, setQ] = useState(""); const [res, setRes] = useState<any[]>([]);
   const [probe, setProbe] = useState<any>(null); const [hl, setHl] = useState<any>(null);
+  const [candidates, setCandidates] = useState<CandidatePin[]>([]);
+
+  // Ranked candidates come from the same endpoint Top 25 renders, so the map and
+  // the table can never disagree about who is #1.
+  useEffect(() => {
+    fetch("/api/scores?market=lexington-ky&limit=25")
+      .then((r) => r.json())
+      .then((j) => setCandidates((j.top ?? []).filter((c: any) => c.lat != null && c.lng != null)))
+      .catch(() => setCandidates([]));
+  }, []);
 
   useEffect(() => { fetch("/api/market").then(async (r) => r.ok ? r.json() : Promise.reject((await r.json()).error)).then(setData).catch((e) => setErr(String(e))); }, []);
   useEffect(() => { if (q.trim().length < 3) return setRes([]); const t = setTimeout(async () => { const j = await (await fetch(`/api/search?q=${encodeURIComponent(q)}`)).json(); setRes(j.results ?? []); }, 300); return () => clearTimeout(t); }, [q]);
@@ -27,7 +37,7 @@ export default function MapPage() {
 
   return (
     <div className="relative h-full">
-      <MapView center={[data.market.center_lat, data.market.center_lng]} zoom={data.market.default_zoom} jurisdictionId={data.jurisdiction?.id ?? "lfucg"} permits={permits} exclusion={data.exclusion} layers={layers} flyTo={flyTo} onMapClick={probeAt} highlight={hl} />
+      <MapView center={[data.market.center_lat, data.market.center_lng]} zoom={data.market.default_zoom} jurisdictionId={data.jurisdiction?.id ?? "lfucg"} permits={permits} candidates={candidates} exclusion={data.exclusion} layers={layers} flyTo={flyTo} onMapClick={probeAt} highlight={hl} />
 
       <div className="absolute left-14 top-3 z-[1250] w-[280px]">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a Lexington address…" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-lg outline-none" />
@@ -36,11 +46,11 @@ export default function MapPage() {
 
       <div className="absolute right-3 top-3 z-[1200] w-[220px] rounded-lg bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
         <div className="mb-1.5 font-bold text-navy">Layers</div>
-        {([["permits", "Existing STRs"], ["exclusion", "600-ft regulatory buffers"], ["parcels", "Fayette parcels (zoom 16+)"], ["zoning", "Lexington zoning (zoom 13+)"], ["boundary", "County boundary"]] as const).map(([k, label]) => (
+        {([["candidates", `Top 25 candidates${candidates.length ? ` (${candidates.length})` : ""}`], ["permits", "Existing STRs"], ["exclusion", "600-ft regulatory buffers"], ["parcels", "Fayette parcels (zoom 16+)"], ["zoning", "Lexington zoning (zoom 13+)"], ["boundary", "County boundary"]] as const).map(([k, label]) => (
           <label key={k} className="mb-1 flex cursor-pointer items-center gap-2"><input type="checkbox" checked={layers[k]} onChange={(e) => setLayers((s) => ({ ...s, [k]: e.target.checked }))} />{label}</label>
         ))}
         <div className="mt-2 border-t pt-2 text-[10px] text-slate-500">{pc.total} permits · {pc.blocking} blocking · {pc.hosted} hosted{pc.unlocated ? ` · ${pc.unlocated} awaiting geocode` : ""}{data.exclusionMeta ? ` · buffers ${data.exclusionMeta.rulesVersion}` : " · no buffers yet (import permits)"}</div>
-        <div className="mt-1 text-[10px] text-slate-400">Candidate listings appear in Phase 4.</div>
+        <div className="mt-1 text-[10px] text-slate-400">{candidates.length ? `${candidates.length} ranked candidates — numbered gold pins, ring colour is the eligibility class` : "No ranked candidates yet — import listings, run forecasts, then re-rank."}</div>
       </div>
 
       {probe && (
