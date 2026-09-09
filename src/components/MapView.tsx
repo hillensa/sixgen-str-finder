@@ -13,11 +13,13 @@ export type CandidatePin = {
   score: number | null; rank: number | null; list_price: number | null;
   beds: number | null; forecast_revenue: number | null; gross_yield_pct: number | null;
   classification: string | null; hoa_status: string | null;
+  url?: string | null; external_id?: string | null; zip?: string | null;
 };
 export type Layers = { exclusion: boolean; permits: boolean; candidates: boolean; parcels: boolean; zoning: boolean; boundary: boolean };
 type Props = {
   center: [number, number]; zoom: number; jurisdictionId: string;
-  permits: PermitPin[]; candidates?: CandidatePin[]; exclusion: any | null; layers: Layers;
+  permits: PermitPin[]; candidates?: CandidatePin[]; hoveredCandidate?: number | null;
+  exclusion: any | null; layers: Layers;
   flyTo?: { lat: number; lng: number; zoom?: number; nonce: number } | null;
   onMapClick?: (lat: number, lng: number) => void;
   highlight?: any | null; // GeoJSON geometry to outline (e.g., selected parcel)
@@ -25,7 +27,7 @@ type Props = {
 
 const zoneColor = (z: string) => /^R-1|^R-2$|^R-3$|^R-4$|^R-5$|^R-1T|^EAR/.test(z || "") ? "#2d6a4f" : /^B-|^MU|^CN|^CC|^CD/.test(z || "") ? "#9d0208" : /^A-/.test(z || "") ? "#b08968" : "#5e548e";
 
-export default function MapView({ center, zoom, jurisdictionId, permits, candidates = [], exclusion, layers, flyTo, onMapClick, highlight }: Props) {
+export default function MapView({ center, zoom, jurisdictionId, permits, candidates = [], hoveredCandidate = null, exclusion, layers, flyTo, onMapClick, highlight }: Props) {
   const el = useRef<HTMLDivElement>(null); const map = useRef<any>(null); const L = useRef<any>(null);
   const g = useRef<Record<string, any>>({}); const clickRef = useRef(onMapClick);
   // Leaflet is imported dynamically, so the map may not exist when the data
@@ -34,6 +36,8 @@ export default function MapView({ center, zoom, jurisdictionId, permits, candida
   // production its chunk is a cold fetch while /api/market is fast, so the
   // permits arrived first and no pin was ever drawn. This flips when the panes
   // and layer groups exist, and every effect depends on it.
+  const markers = useRef<Record<number, { marker: any; rank: number; tone: string }>>({});
+  const hoveredRef = useRef<number | null>(null);
   const [ready, setReady] = useState(false);
   clickRef.current = onMapClick;
 
@@ -65,22 +69,28 @@ export default function MapView({ center, zoom, jurisdictionId, permits, candida
       .bindPopup(`<b>${p.address_norm ?? p.address_raw}</b><br>Existing STR permit<br>Type: ${p.str_type ?? "unknown"}<br>Blocking: ${p.is_blocking ? "yes" : "no"}<br><small>Source: ${p.source}</small>`).addTo(grp);
   }, [ready, permits, layers.permits]);
 
+  /** One icon builder for both the initial draw and the hover resize. */
+  const candidateIcon = (l: any, rank: number, tone: string, big: boolean) => {
+    const d = big ? 34 : 24;
+    return l.divIcon({
+      className: "",
+      html: `<div style="display:flex;align-items:center;justify-content:center;width:${d}px;height:${d}px;border-radius:50%;background:#c9a227;color:#14213d;font:700 ${big ? 14 : 11}px/1 system-ui;border:${big ? 3 : 2}px solid ${tone};box-shadow:0 ${big ? 3 : 1}px ${big ? 10 : 4}px rgba(0,0,0,.45);transition:all .12s">${rank}</div>`,
+      iconSize: [d, d], iconAnchor: [d / 2, d / 2],
+    });
+  };
+
   // Candidates sit above permits and look nothing like them: a numbered gold
   // marker rather than a small dot. The number is the rank, so the map answers
   // "where is #1" without cross-referencing the table.
-  useEffect(() => { const l = L.current, grp = g.current.candidates; if (!l || !grp) return; grp.clearLayers(); if (!layers.candidates) return;
+  useEffect(() => { const l = L.current, grp = g.current.candidates; if (!l || !grp) return; grp.clearLayers(); markers.current = {}; if (!layers.candidates) return;
     const money = (n: number | null) => n == null ? "—" : "$" + Math.round(n).toLocaleString();
     candidates.forEach((c, i) => {
       if (c.lat == null || c.lng == null) return;
       const rank = c.rank ?? i + 1;
       const tone = c.classification === "GREEN" ? "#15803d" : c.classification === "RED" ? "#b91c1c" : "#b45309";
-      l.marker([c.lat, c.lng], {
+      const marker = l.marker([c.lat, c.lng], {
         pane: "pins", zIndexOffset: 1000,
-        icon: l.divIcon({
-          className: "",
-          html: `<div style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#c9a227;color:#14213d;font:700 11px/1 system-ui;border:2px solid ${tone};box-shadow:0 1px 4px rgba(0,0,0,.4)">${rank}</div>`,
-          iconSize: [24, 24], iconAnchor: [12, 12],
-        }),
+        icon: candidateIcon(l, rank, tone, c.property_id === hoveredRef.current),
       }).bindPopup(
         `<b>#${rank} &middot; ${c.address ?? "—"}</b><br>` +
         `${money(c.list_price)}${c.beds ? ` &middot; ${c.beds} bd` : ""}<br>` +
@@ -89,8 +99,24 @@ export default function MapView({ center, zoom, jurisdictionId, permits, candida
         `<small>${(c.hoa_status ?? "").replace("HOA_", "HOA ") || ""}</small><br>` +
         `<a href="/property/${c.property_id}">Open property &rarr;</a>`
       ).addTo(grp);
+      markers.current[c.property_id] = { marker, rank, tone };
     });
   }, [ready, candidates, layers.candidates]);
+
+  // Hovering a row in the Top 25 list grows its pin. Done by swapping the icon
+  // on the existing marker rather than redrawing the layer, so an open popup
+  // survives and the map does not flicker on every mouse move.
+  useEffect(() => {
+    // Record the hover first: a row hovered while the Leaflet chunk is still
+    // downloading would otherwise be forgotten, and the pin would draw small.
+    hoveredRef.current = hoveredCandidate;
+    const l = L.current; if (!l) return;
+    for (const [id, m] of Object.entries(markers.current)) {
+      const on = Number(id) === hoveredCandidate;
+      m.marker.setIcon(candidateIcon(l, m.rank, m.tone, on));
+      m.marker.setZIndexOffset(on ? 2000 : 1000);
+    }
+  }, [ready, hoveredCandidate, candidates, layers.candidates]);
 
   useEffect(() => { const l = L.current, grp = g.current.highlight; if (!l || !grp) return; grp.clearLayers();
     if (highlight) l.geoJSON(highlight, { pane: "highlight", style: { color: "#00b4d8", weight: 3, fillColor: "#00b4d8", fillOpacity: 0.15 } }).addTo(grp);

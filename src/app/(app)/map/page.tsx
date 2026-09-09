@@ -5,12 +5,28 @@ import { Badge } from "@/components/ui/badge";
 import type { Layers, PermitPin, CandidatePin } from "@/components/MapView";
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false, loading: () => <div className="flex h-full items-center justify-center text-slate-400">Loading map…</div> });
 
+/**
+ * Where a double-click should take you.
+ *
+ * The feed's own listing URL when it has one. The ImagineMLS export carries no
+ * URL column, so the fallback is a Zillow address search — public, no login,
+ * and it lands on the property or a short result list. The MLS number stays on
+ * the row for looking it up in flexmls directly, which needs a session this
+ * link cannot carry.
+ */
+function listingUrl(c: CandidatePin): string {
+  if (c.url) return c.url;
+  const q = [c.address, "Lexington", "KY", c.zip].filter(Boolean).join(" ");
+  return `https://www.zillow.com/homes/${encodeURIComponent(q)}_rb/`;
+}
+
 export default function MapPage() {
   const [data, setData] = useState<any>(null); const [err, setErr] = useState<string | null>(null);
   const [layers, setLayers] = useState<Layers>({ exclusion: true, permits: true, candidates: true, parcels: false, zoning: false, boundary: true });
   const [flyTo, setFlyTo] = useState<any>(null); const [q, setQ] = useState(""); const [res, setRes] = useState<any[]>([]);
   const [probe, setProbe] = useState<any>(null); const [hl, setHl] = useState<any>(null);
   const [candidates, setCandidates] = useState<CandidatePin[]>([]);
+  const [hovered, setHovered] = useState<number | null>(null);
 
   // Ranked candidates come from the same endpoint Top 25 renders, so the map and
   // the table can never disagree about who is #1.
@@ -37,7 +53,7 @@ export default function MapPage() {
 
   return (
     <div className="relative h-full">
-      <MapView center={[data.market.center_lat, data.market.center_lng]} zoom={data.market.default_zoom} jurisdictionId={data.jurisdiction?.id ?? "lfucg"} permits={permits} candidates={candidates} exclusion={data.exclusion} layers={layers} flyTo={flyTo} onMapClick={probeAt} highlight={hl} />
+      <MapView center={[data.market.center_lat, data.market.center_lng]} zoom={data.market.default_zoom} jurisdictionId={data.jurisdiction?.id ?? "lfucg"} permits={permits} candidates={candidates} hoveredCandidate={hovered} exclusion={data.exclusion} layers={layers} flyTo={flyTo} onMapClick={probeAt} highlight={hl} />
 
       <div className="absolute left-14 top-3 z-[1250] w-[280px]">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a Lexington address…" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-lg outline-none" />
@@ -52,6 +68,7 @@ export default function MapPage() {
           <div className="border-b border-slate-200 px-3 py-2">
             <div className="text-sm font-bold text-navy">Top {candidates.length}</div>
             <div className="text-[10px] text-slate-500">
+              Hover a row to find it on the map, click to fly there, double-click to open the listing.<br />
               Gross yield = forecast revenue &divide; list price. Revenue is modelled from
               Sixgen&apos;s own trailing twelve, before expenses and financing.
             </div>
@@ -64,16 +81,25 @@ export default function MapPage() {
               return (
                 <button
                   key={c.property_id}
+                  onMouseEnter={() => setHovered(c.property_id)}
+                  onMouseLeave={() => setHovered((h) => (h === c.property_id ? null : h))}
                   onClick={() => { setFlyTo({ lat: c.lat, lng: c.lng, zoom: 17, nonce: Date.now() }); probeAt(c.lat, c.lng); }}
+                  onDoubleClick={() => window.open(listingUrl(c), "_blank", "noopener,noreferrer")}
+                  title={c.url ? "Double-click to open the listing" : "Double-click to search Zillow for this address"}
                   className="flex w-full items-start gap-2 border-b border-slate-100 px-3 py-2 text-left hover:bg-amber-50"
                 >
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">{rank}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-semibold text-navy">{c.address ?? "—"}</span>
+                    {c.external_id && <span className="block text-[10px] text-slate-400">MLS {c.external_id}</span>}
                     <span className="block text-[11px] text-slate-500">
                       {c.list_price != null ? `$${Math.round(c.list_price).toLocaleString()}` : "—"}
                       {c.beds ? ` · ${c.beds} bd` : ""}
-                      {c.forecast_revenue != null ? ` · fc $${Math.round(Number(c.forecast_revenue) / 1000)}k` : ""}
+                    </span>
+                    <span className="block text-[11px] text-slate-600">
+                      {c.forecast_revenue != null
+                        ? <>est. revenue <b className="text-navy">${Math.round(Number(c.forecast_revenue)).toLocaleString()}</b>/yr</>
+                        : <span className="text-slate-400">no revenue forecast</span>}
                     </span>
                   </span>
                   <span className="shrink-0 text-right">

@@ -331,3 +331,23 @@ test("the map surfaces gross yield next to the address, not just the score", () 
   assert.ok(/before expenses and financing/.test(page),
     "gross yield must be labelled gross — it is not a return");
 });
+
+test("hovering the list resizes the pin in place, without redrawing the layer", () => {
+  // Rebuilding the candidate layer on every mouse move would close an open
+  // popup and flicker. The hover effect swaps icons on existing markers.
+  const mv = readFileSync(join(__dirname, "..", "src", "components", "MapView.tsx"), "utf8");
+  assert.ok(/hoveredCandidate/.test(mv), "the hovered id must reach the map");
+  assert.ok(/setIcon\(/.test(mv), "hover must swap the icon, not rebuild");
+  assert.ok(/markers\.current = \{\}/.test(mv),
+    "the marker registry must reset on rebuild, or hover resizes a pin that is gone");
+});
+
+test("a candidate with no feed URL still opens somewhere useful", () => {
+  // The ImagineMLS export has no URL column, so every row today falls back.
+  // Silently doing nothing on double-click would read as a broken control.
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "map", "page.tsx"), "utf8");
+  assert.ok(/function listingUrl/.test(page));
+  assert.ok(/if \(c\.url\) return c\.url;/.test(page), "a real listing URL wins when the feed has one");
+  assert.ok(/zillow\.com/.test(page), "and there is a fallback rather than a dead click");
+  assert.ok(/est\. revenue/.test(page), "the list must name the revenue, not abbreviate it");
+});
