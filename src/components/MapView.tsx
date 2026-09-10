@@ -14,11 +14,21 @@ export type CandidatePin = {
   beds: number | null; forecast_revenue: number | null; gross_yield_pct: number | null;
   classification: string | null; hoa_status: string | null;
   url?: string | null; external_id?: string | null; zip?: string | null;
+  spacing_result?: string | null; nearest_str_distance_ft?: number | null;
 };
-export type Layers = { exclusion: boolean; permits: boolean; candidates: boolean; parcels: boolean; zoning: boolean; boundary: boolean };
+export type Layers = { exclusion: boolean; permits: boolean; candidates: boolean; blocked: boolean; parcels: boolean; zoning: boolean; boundary: boolean };
 type Props = {
   center: [number, number]; zoom: number; jurisdictionId: string;
   permits: PermitPin[]; candidates?: CandidatePin[]; hoveredCandidate?: number | null;
+  /**
+   * Listings the separation rule rules out. They are never in `candidates` —
+   * eligibility gates before scoring, so a failing house cannot be ranked — and
+   * without their own layer the "too close to an existing STR" case would be
+   * invisible on a map that only ever draws the Top 25.
+   */
+  blocked?: CandidatePin[];
+  /** Separation radius in feet, read from str_rules rather than assumed. */
+  spacingFt?: number | null;
   exclusion: any | null; layers: Layers;
   flyTo?: { lat: number; lng: number; zoom?: number; nonce: number } | null;
   onMapClick?: (lat: number, lng: number) => void;
@@ -27,7 +37,7 @@ type Props = {
 
 const zoneColor = (z: string) => /^R-1|^R-2$|^R-3$|^R-4$|^R-5$|^R-1T|^EAR/.test(z || "") ? "#2d6a4f" : /^B-|^MU|^CN|^CC|^CD/.test(z || "") ? "#9d0208" : /^A-/.test(z || "") ? "#b08968" : "#5e548e";
 
-export default function MapView({ center, zoom, jurisdictionId, permits, candidates = [], hoveredCandidate = null, exclusion, layers, flyTo, onMapClick, highlight }: Props) {
+export default function MapView({ center, zoom, jurisdictionId, permits, candidates = [], blocked = [], hoveredCandidate = null, spacingFt = null, exclusion, layers, flyTo, onMapClick, highlight }: Props) {
   const el = useRef<HTMLDivElement>(null); const map = useRef<any>(null); const L = useRef<any>(null);
   const g = useRef<Record<string, any>>({}); const clickRef = useRef(onMapClick);
   // Leaflet is imported dynamically, so the map may not exist when the data
@@ -51,7 +61,7 @@ export default function MapView({ center, zoom, jurisdictionId, permits, candida
       leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(m);
       const mk = (n: string, z: number, o?: string, pe?: string) => { const p = m.createPane(n); p.style.zIndex = String(z); if (o) p.style.opacity = o; if (pe) p.style.pointerEvents = pe; };
       mk("exclusion", 350, "0.42", "none"); mk("zoning", 360, "0.35"); mk("parcels", 380); mk("boundary", 390, undefined, "none"); mk("highlight", 440, undefined, "none"); mk("pins", 460);
-      for (const k of ["exclusion", "zoning", "parcels", "boundary", "highlight", "permits", "candidates"]) g.current[k] = leaflet.layerGroup().addTo(m);
+      for (const k of ["exclusion", "zoning", "parcels", "boundary", "highlight", "permits", "blocked", "candidates"]) g.current[k] = leaflet.layerGroup().addTo(m);
       m.on("click", (e: any) => clickRef.current?.(e.latlng.lat, e.latlng.lng));
       if (!dead) setReady(true);
     })();
@@ -88,6 +98,31 @@ export default function MapView({ center, zoom, jurisdictionId, permits, candida
       if (c.lat == null || c.lng == null) return;
       const rank = c.rank ?? i + 1;
       const tone = c.classification === "GREEN" ? "#15803d" : c.classification === "RED" ? "#b91c1c" : "#b45309";
+      // The property's own separation radius.
+      //
+      // Filled by the STORED spacing result, not by a browser-side overlap
+      // test. PostGIS measures from the parcel boundary where one is matched
+      // and reports PASS / FAIL / REVIEW; re-deciding it here from circle
+      // geometry would be an approximation that could disagree with the
+      // screening, which is the one thing the map must never do.
+      //
+      // Note what the circle does and does not mean: it is 600 ft around THIS
+      // house. Two such circles overlapping puts the houses within 1200 ft,
+      // which is not a violation. The fill is the answer; the circle is the
+      // scale.
+      if (spacingFt && spacingFt > 0) {
+        const sr = (c.spacing_result ?? "").toUpperCase();
+        const fill = sr === "PASS" ? "#15803d" : sr === "FAIL" || sr === "REVIEW" ? "#eab308" : "#94a3b8";
+        l.circle([c.lat, c.lng], {
+          pane: "pins",
+          radius: spacingFt * 0.3048,          // feet -> metres
+          color: fill, weight: 1.5,
+          dashArray: sr === "REVIEW" ? "4 3" : undefined,   // measured from a point, not a boundary
+          fillColor: fill,
+          fillOpacity: sr === "PASS" ? 0.18 : sr ? 0.28 : 0.10,
+        }).addTo(grp);
+      }
+
       const marker = l.marker([c.lat, c.lng], {
         pane: "pins", zIndexOffset: 1000,
         icon: candidateIcon(l, rank, tone, c.property_id === hoveredRef.current),
@@ -96,12 +131,48 @@ export default function MapView({ center, zoom, jurisdictionId, permits, candida
         `${money(c.list_price)}${c.beds ? ` &middot; ${c.beds} bd` : ""}<br>` +
         `Forecast ${money(c.forecast_revenue)}${c.gross_yield_pct != null ? ` &middot; ${Number(c.gross_yield_pct).toFixed(1)}% yield` : ""}<br>` +
         `Score ${c.score == null ? "—" : Number(c.score).toFixed(1)} &middot; ${c.classification ?? "—"}<br>` +
+        `Separation: ${c.spacing_result ?? "not tested"}` +
+        `${c.nearest_str_distance_ft != null ? ` &middot; nearest STR ${Math.round(Number(c.nearest_str_distance_ft))} ft` : ""}<br>` +
         `<small>${(c.hoa_status ?? "").replace("HOA_", "HOA ") || ""}</small><br>` +
         `<a href="/property/${c.property_id}">Open property &rarr;</a>`
       ).addTo(grp);
       markers.current[c.property_id] = { marker, rank, tone };
     });
-  }, [ready, candidates, layers.candidates]);
+  }, [ready, candidates, layers.candidates, spacingFt]);
+
+  // Listings the separation rule blocks. Same circle, yellow fill, and a hollow
+  // marker rather than a numbered one — they have no rank because they never
+  // reached the ranking. Drawn beneath the candidates so a blocked house can
+  // never be mistaken for one you can buy.
+  useEffect(() => { const l = L.current, grp = g.current.blocked; if (!l || !grp) return; grp.clearLayers(); if (!layers.blocked) return;
+    const money = (n: number | null) => n == null ? "—" : "$" + Math.round(n).toLocaleString();
+    blocked.forEach((c) => {
+      if (c.lat == null || c.lng == null) return;
+      if (spacingFt && spacingFt > 0) {
+        l.circle([c.lat, c.lng], {
+          pane: "pins", radius: spacingFt * 0.3048,
+          color: "#eab308", weight: 1.5, fillColor: "#eab308", fillOpacity: 0.28,
+        }).addTo(grp);
+      }
+      l.circleMarker([c.lat, c.lng], {
+        pane: "pins", radius: 5, color: "#a16207", weight: 2, fillColor: "#fde047", fillOpacity: 1,
+      }).bindPopup(
+        `<b>${c.address ?? "—"}</b><br>` +
+        `${money(c.list_price)}${c.beds ? ` &middot; ${c.beds} bd` : ""}<br>` +
+        `<b>Blocked: too close to an existing STR</b><br>` +
+        `${c.nearest_str_distance_ft != null ? `Nearest STR ${Math.round(Number(c.nearest_str_distance_ft))} ft away` : "Nearest STR distance not recorded"}` +
+        `${spacingFt ? ` &middot; rule requires ${spacingFt} ft` : ""}<br>` +
+        // A near-zero separation means the nearest permit is on this parcel or
+        // the one touching it — which can mean the house being sold is ITSELF a
+        // permitted STR. That is the opposite of a disqualification, but whether
+        // the permit survives a sale is an LFUCG question, so flag it for a
+        // human instead of deciding it here.
+        `${c.nearest_str_distance_ft != null && Number(c.nearest_str_distance_ft) < 30
+            ? `<i>The nearest permit is on or adjoining this parcel &mdash; check whether this listing is itself a permitted STR.</i><br>` : ""}` +
+        `<a href="/property/${c.property_id}">Open property &rarr;</a>`
+      ).addTo(grp);
+    });
+  }, [ready, blocked, layers.blocked, spacingFt]);
 
   // Hovering a row in the Top 25 list grows its pin. Done by swapping the icon
   // on the existing marker rather than redrawing the layer, so an open popup

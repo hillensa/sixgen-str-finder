@@ -221,7 +221,7 @@ export default function PropertyDetail({ params }: { params: { id: string } }) {
           <Card className="overflow-hidden"><div className="h-[320px]">
             <MapView center={[c.lat ?? 38.035, c.lng ?? -84.5]} zoom={16} jurisdictionId="lfucg"
               permits={[]} exclusion={null}
-              layers={{ exclusion: true, permits: true, candidates: false, parcels: true, zoning: false, boundary: false }}
+              layers={{ exclusion: true, permits: true, candidates: false, blocked: false, parcels: true, zoning: false, boundary: false }}
               flyTo={c.lat ? { lat: c.lat, lng: c.lng, zoom: 16, nonce: c.property_id } : null} highlight={null} />
           </div></Card>
         </div>

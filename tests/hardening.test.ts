@@ -351,3 +351,41 @@ test("a candidate with no feed URL still opens somewhere useful", () => {
   assert.ok(/zillow\.com/.test(page), "and there is a fallback rather than a dead click");
   assert.ok(/est\. revenue/.test(page), "the list must name the revenue, not abbreviate it");
 });
+
+test("REGRESSION: the separation circle is coloured by PostGIS, not by browser geometry", () => {
+  // Re-deciding eligibility from circle overlap in the browser would be an
+  // approximation that can disagree with the screening. It would also be the
+  // WRONG test: two 600-ft circles overlapping puts the houses within 1200 ft,
+  // which is not a violation of a 600-ft rule.
+  const mv = readFileSync(join(__dirname, "..", "src", "components", "MapView.tsx"), "utf8");
+  assert.ok(/c\.spacing_result/.test(mv), "the fill must come from the stored spacing result");
+  assert.ok(!/intersect|turf|distanceTo\(/i.test(mv),
+    "no client-side overlap test may decide the colour");
+  assert.ok(/spacingFt \* 0\.3048/.test(mv), "the radius is in feet and Leaflet wants metres");
+});
+
+test("REGRESSION: the separation radius comes from str_rules, never a constant", () => {
+  // 600 ft still ships marked "(verify)" pending LFUCG Planning. A hardcoded
+  // radius would keep drawing the old circle after the rule was corrected.
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "map", "page.tsx"), "utf8");
+  assert.ok(/rule_key === "spacing_ft"/.test(page), "the radius must be read from the rules");
+  assert.ok(!/radius[^\n]*\b600\b/.test(page), "and not hardcoded");
+});
+
+test("REGRESSION: spacing failures reach the map on their own layer", () => {
+  // Eligibility gates before scoring, so a listing that fails the separation
+  // rule is never in the Top 25. If the map only drew ranked candidates, every
+  // circle would be green and "too close to an existing STR" — the state the
+  // operator most needs to see — would never render at all.
+  const route = readFileSync(join(__dirname, "..", "src", "app", "api", "scores", "route.ts"), "utf8");
+  assert.ok(/spacing_result", "FAIL"/.test(route), "the API must return the blocked listings");
+  assert.ok(/spacingFailed/.test(route), "under a name the map can read");
+
+  const mv = readFileSync(join(__dirname, "..", "src", "components", "MapView.tsx"), "utf8");
+  assert.ok(/blocked = \[\]/.test(mv), "MapView takes them as their own prop");
+  assert.ok(/layers\.blocked/.test(mv), "behind their own toggle");
+
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "map", "page.tsx"), "utf8");
+  assert.ok(/blocked: false/.test(page), "off by default — they are rejects, not candidates");
+  assert.ok(/setBlocked\(j\.spacingFailed/.test(page), "fed from the API, not recomputed");
+});

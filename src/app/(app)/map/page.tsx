@@ -22,19 +22,38 @@ function listingUrl(c: CandidatePin): string {
 
 export default function MapPage() {
   const [data, setData] = useState<any>(null); const [err, setErr] = useState<string | null>(null);
-  const [layers, setLayers] = useState<Layers>({ exclusion: true, permits: true, candidates: true, parcels: false, zoning: false, boundary: true });
+  const [layers, setLayers] = useState<Layers>({ exclusion: true, permits: true, candidates: true, blocked: false, parcels: false, zoning: false, boundary: true });
   const [flyTo, setFlyTo] = useState<any>(null); const [q, setQ] = useState(""); const [res, setRes] = useState<any[]>([]);
   const [probe, setProbe] = useState<any>(null); const [hl, setHl] = useState<any>(null);
   const [candidates, setCandidates] = useState<CandidatePin[]>([]);
+  const [blocked, setBlocked] = useState<CandidatePin[]>([]);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [spacingFt, setSpacingFt] = useState<number | null>(null);
+
+  // The separation radius is a rule, not a constant. It still ships marked
+  // "(verify)" pending LFUCG Planning, so the circle has to follow str_rules.
+  useEffect(() => {
+    fetch("/api/rules?jurisdiction=lfucg")
+      .then((r) => r.json())
+      .then((j) => {
+        const r = (j.rules ?? []).find((x: any) => x.rule_key === "spacing_ft" && x.enabled);
+        setSpacingFt(r?.value_num != null ? Number(r.value_num) : null);
+      })
+      .catch(() => setSpacingFt(null));
+  }, []);
 
   // Ranked candidates come from the same endpoint Top 25 renders, so the map and
   // the table can never disagree about who is #1.
   useEffect(() => {
     fetch("/api/scores?market=lexington-ky&limit=25")
       .then((r) => r.json())
-      .then((j) => setCandidates((j.top ?? []).filter((c: any) => c.lat != null && c.lng != null)))
-      .catch(() => setCandidates([]));
+      .then((j) => {
+        setCandidates((j.top ?? []).filter((c: any) => c.lat != null && c.lng != null));
+        // Off by default and counted separately: these are the listings the
+        // separation rule already rejected, not near-misses in the ranking.
+        setBlocked(j.spacingFailed ?? []);
+      })
+      .catch(() => { setCandidates([]); setBlocked([]); });
   }, []);
 
   useEffect(() => { fetch("/api/market").then(async (r) => r.ok ? r.json() : Promise.reject((await r.json()).error)).then(setData).catch((e) => setErr(String(e))); }, []);
@@ -53,7 +72,7 @@ export default function MapPage() {
 
   return (
     <div className="relative h-full">
-      <MapView center={[data.market.center_lat, data.market.center_lng]} zoom={data.market.default_zoom} jurisdictionId={data.jurisdiction?.id ?? "lfucg"} permits={permits} candidates={candidates} hoveredCandidate={hovered} exclusion={data.exclusion} layers={layers} flyTo={flyTo} onMapClick={probeAt} highlight={hl} />
+      <MapView center={[data.market.center_lat, data.market.center_lng]} zoom={data.market.default_zoom} jurisdictionId={data.jurisdiction?.id ?? "lfucg"} permits={permits} candidates={candidates} blocked={blocked} hoveredCandidate={hovered} spacingFt={spacingFt} exclusion={data.exclusion} layers={layers} flyTo={flyTo} onMapClick={probeAt} highlight={hl} />
 
       <div className="absolute left-14 top-3 z-[1250] w-[280px]">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a Lexington address…" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-lg outline-none" />
@@ -117,11 +136,11 @@ export default function MapPage() {
 
       <div className="absolute bottom-4 left-3 z-[1200] w-[236px] rounded-lg bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
         <div className="mb-1.5 font-bold text-navy">Layers</div>
-        {([["candidates", `Top 25 candidates${candidates.length ? ` (${candidates.length})` : ""}`], ["permits", "Existing STRs"], ["exclusion", "600-ft regulatory buffers"], ["parcels", "Fayette parcels (zoom 16+)"], ["zoning", "Lexington zoning (zoom 13+)"], ["boundary", "County boundary"]] as const).map(([k, label]) => (
+        {([["candidates", `Top 25 candidates${candidates.length ? ` (${candidates.length})` : ""}`], ["blocked", `Blocked by proximity${blocked.length ? ` (${blocked.length})` : ""}`], ["permits", "Existing STRs"], ["exclusion", "600-ft regulatory buffers"], ["parcels", "Fayette parcels (zoom 16+)"], ["zoning", "Lexington zoning (zoom 13+)"], ["boundary", "County boundary"]] as const).map(([k, label]) => (
           <label key={k} className="mb-1 flex cursor-pointer items-center gap-2"><input type="checkbox" checked={layers[k]} onChange={(e) => setLayers((s) => ({ ...s, [k]: e.target.checked }))} />{label}</label>
         ))}
         <div className="mt-2 border-t pt-2 text-[10px] text-slate-500">{pc.total} permits · {pc.blocking} blocking · {pc.hosted} hosted{pc.unlocated ? ` · ${pc.unlocated} awaiting geocode` : ""}{data.exclusionMeta ? ` · buffers ${data.exclusionMeta.rulesVersion}` : " · no buffers yet (import permits)"}</div>
-        <div className="mt-1 text-[10px] text-slate-400">{candidates.length ? `${candidates.length} ranked candidates — numbered gold pins, ring colour is the eligibility class` : "No ranked candidates yet — import listings, run forecasts, then re-rank."}</div>
+        <div className="mt-1 text-[10px] text-slate-400">{candidates.length ? `${candidates.length} ranked candidates — numbered gold pins${spacingFt ? ` ringed in green by their ${spacingFt}-ft separation radius. Every ranked candidate passes separation; the ${blocked.length} that fail are on the yellow layer, gated out of the ranking.` : "."}` : "No ranked candidates yet — import listings, run forecasts, then re-rank."}</div>
       </div>
 
       {probe && (

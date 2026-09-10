@@ -135,7 +135,7 @@ export default function TestAddress() {
           <MapView
             center={pick ? [pick.lat, pick.lng] : [38.035, -84.5]} zoom={pick ? 18 : 12}
             jurisdictionId="lfucg" permits={[]} exclusion={null}
-            layers={{ exclusion: true, permits: true, candidates: false, parcels: true, zoning: true, boundary: false }}
+            layers={{ exclusion: true, permits: true, candidates: false, blocked: false, parcels: true, zoning: true, boundary: false }}
             flyTo={pick ? { lat: pick.lat, lng: pick.lng, zoom: 18, nonce: Date.now() } : null}
             highlight={parcel?.parcel?.geometry ?? null}
           />

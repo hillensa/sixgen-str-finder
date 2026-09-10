@@ -125,11 +125,21 @@ export async function GET(req: Request) {
     s.from("v_latest_score").select("property_id,gate_reason").eq("gated", true).limit(50),
   ]);
 
+  // Every listing the separation rule rules out. These never reach `top` —
+  // eligibility gates before scoring — so without returning them the map could
+  // only ever draw the passing case, and "too close to an existing STR" would
+  // be a state the operator never sees.
+  const { data: spacingFailed } = await s.from("v_acquisition_candidates")
+    .select("property_id,address,lat,lng,list_price,beds,classification,hoa_status,"
+      + "spacing_result,nearest_str_distance_ft,external_id,zip,url,forecast_revenue,gross_yield_pct")
+    .eq("market_id", marketId).eq("spacing_result", "FAIL").limit(300);
+
   return NextResponse.json({
     top: top ?? [],
     needsHoaVerification: needsHoa ?? [],
     requiresReview: review ?? [],
     gatedCount: gated?.length ?? 0,
+    spacingFailed: (spacingFailed ?? []).filter((r: any) => r.lat != null && r.lng != null),
     summary: summary?.[0] ?? null,
     weights: weights ?? [],
   });
