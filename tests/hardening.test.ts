@@ -389,3 +389,25 @@ test("REGRESSION: spacing failures reach the map on their own layer", () => {
   assert.ok(/blocked: false/.test(page), "off by default — they are rejects, not candidates");
   assert.ok(/setBlocked\(j\.spacingFailed/.test(page), "fed from the API, not recomputed");
 });
+
+test("REGRESSION: the Street View key stays server-side and the feature is opt-in", () => {
+  // A NEXT_PUBLIC_ key would be inlined into the bundle for anyone to lift and
+  // bill. And Street View costs money per request, so an unset key must degrade
+  // to the card's no-photo note rather than erroring the page.
+  const route = readFileSync(join(__dirname, "..", "src", "app", "api", "streetview", "route.ts"), "utf8");
+  assert.ok(/process\.env\.GOOGLE_STREETVIEW_KEY/.test(route), "read from a server-only env var");
+  assert.ok(!/NEXT_PUBLIC/.test(route), "never a NEXT_PUBLIC key — that ships the key to the browser");
+  assert.ok(/if \(!key\)[\s\S]{0,80}404/.test(route), "no key must 404, not throw");
+  assert.ok(/auth\.getUser\(\)/.test(route) && /401/.test(route), "and the proxy is not an open relay");
+  assert.ok(/return_error_code/.test(route), "a missing-imagery tile must 404 rather than bill for a grey square");
+
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "map", "page.tsx"), "utf8");
+  assert.ok(/onError=\{\(\) => setNoImage\(true\)\}/.test(page), "the card falls back when no photo loads");
+});
+
+test("REGRESSION: the Top 25 row offers a visible way to open the listing", () => {
+  // The double-click gesture shipped with nothing on screen advertising it.
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "map", "page.tsx"), "utf8");
+  assert.ok(/See it on Zillow|Open listing/.test(page), "a labelled link, not just a gesture");
+  assert.ok(/rel="noopener noreferrer"/.test(page), "opened safely in a new tab");
+});

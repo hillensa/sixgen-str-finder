@@ -15,6 +15,13 @@ export type CandidatePin = {
   classification: string | null; hoa_status: string | null;
   url?: string | null; external_id?: string | null; zip?: string | null;
   spacing_result?: string | null; nearest_str_distance_ft?: number | null;
+  // Carried for the hover preview. `primary_photo` is null on every row the
+  // ImagineMLS export produces — that export view has no photo field — so the
+  // preview must read well without one rather than showing a broken frame.
+  baths?: number | null; sqft?: number | null; year_built?: number | null;
+  lot_sqft?: number | null; property_type?: string | null;
+  price_per_sqft?: number | null; days_on_market?: number | null;
+  primary_photo?: string | null;
 };
 export type Layers = { exclusion: boolean; permits: boolean; candidates: boolean; blocked: boolean; parcels: boolean; zoning: boolean; boundary: boolean };
 type Props = {

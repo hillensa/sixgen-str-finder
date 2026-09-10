@@ -73,12 +73,22 @@ Set these in Vercel → Settings → Environment Variables, for **Production**
 | `SUPABASE_SERVICE_ROLE_KEY` | service role key | **server only** — bypasses all RLS |
 | `NEXT_PUBLIC_SITE_URL` | `https://strmap.sixgenrentals.com` | magic-link redirects |
 | `IMPORT_SECRET` | long random string | bearer token for machine imports |
+| `GOOGLE_STREETVIEW_KEY` | *(optional)* | photos on the map's hover card — **Config, not Secret** |
 
 `NEXT_PUBLIC_*` variables are compiled into the browser bundle. Never put the
 service role key in one.
 
 Use a **different** `IMPORT_SECRET` from the local one, so a leaked development
 value cannot drive production.
+
+`GOOGLE_STREETVIEW_KEY` is optional and off by default. Leave it unset and
+`/api/streetview` returns 404, the hover card shows its no-photo note, and
+Google is never called or billed. To turn photos on: in Google Cloud, enable
+**Street View Static API**, create an API key, and restrict it to that one API.
+Do **not** add an HTTP-referrer restriction — the key is used server-side, from
+Vercel, and a referrer rule would reject every request. Billing is per image
+request; the card caches for a day, so a hovered row costs at most one request
+per property per day.
 
 ### 4. Add the domain
 
