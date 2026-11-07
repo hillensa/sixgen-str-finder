@@ -8,6 +8,7 @@ import { treatmentLabel } from "@/lib/rules";
 import { factLabel } from "@/lib/eligibility";
 import type { HoaStatus } from "@/lib/types";
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
+import type { PermitPin } from "@/components/MapView";
 
 const HOA_OPTIONS: { value: HoaStatus; label: string }[] = [
   { value: "HOA_UNKNOWN", label: "Unverified" },
@@ -19,6 +20,29 @@ export default function TestAddress() {
   const [q, setQ] = useState(""); const [res, setRes] = useState<any[]>([]); const [pick, setPick] = useState<any>(null);
   const [hoa, setHoa] = useState<HoaStatus>("HOA_UNKNOWN");
   const [out, setOut] = useState<any>(null); const [busy, setBusy] = useState(false);
+  // The page shipped handing the map an empty permits array, so the existing
+  // STRs — the whole point of testing an address — were never drawn. They come
+  // from the endpoint the main map uses, so the two can never disagree.
+  const [permits, setPermits] = useState<PermitPin[]>([]);
+  const [exclusion, setExclusion] = useState<any>(null);
+  const [spacingFt, setSpacingFt] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("/api/market")
+      .then((r) => r.json())
+      .then((j) => {
+        setPermits((j.permits ?? []).filter((p: any) => p.lat != null && p.lng != null));
+        setExclusion(j.exclusion ?? null);
+      })
+      .catch(() => { setPermits([]); setExclusion(null); });
+    fetch("/api/rules?jurisdiction=lfucg")
+      .then((r) => r.json())
+      .then((j) => {
+        const r = (j.rules ?? []).find((x: any) => x.rule_key === "spacing_ft" && x.enabled);
+        setSpacingFt(r?.value_num != null ? Number(r.value_num) : null);
+      })
+      .catch(() => setSpacingFt(null));
+  }, []);
 
   useEffect(() => {
     if (q.trim().length < 3) return setRes([]);
@@ -38,6 +62,7 @@ export default function TestAddress() {
   const t = treatmentLabel(facts?.zoning_treatment ?? null);
   const spacing = factLabel(facts?.spacing_result ?? null);
   const density = factLabel(facts?.density_result ?? null);
+  const nearby = out?.nearby?.permits ?? [];
   const fails = (elig?.failures ?? []).filter((f: any) => f.severity === "fail");
   const reviews = (elig?.failures ?? []).filter((f: any) => f.severity === "review");
 
@@ -119,6 +144,47 @@ export default function TestAddress() {
                     </div>
                   )}
 
+                  {nearby.length > 0 && (
+                    <div className="rounded-lg border border-slate-200">
+                      <div className="border-b border-slate-200 px-3 py-2">
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-700">Nearest existing STRs</div>
+                        {/* The rule is measured property line to property line in
+                            PostGIS. These are house to house, which is the
+                            question being asked here — say which is which. */}
+                        <div className="text-[10px] leading-snug text-slate-500">
+                          Straight-line from the geocoded address to each permit.
+                          The {spacingFt ?? 600}-ft rule above is measured property line to
+                          property line and is the one that governs.
+                        </div>
+                      </div>
+                      <div className="max-h-56 overflow-y-auto">
+                        {nearby.map((n: any) => {
+                          const inside = spacingFt != null && n.distance_ft < spacingFt;
+                          return (
+                            <div key={n.id} className="flex items-baseline justify-between gap-2 border-b border-slate-100 px-3 py-1.5 last:border-0">
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-xs text-slate-700">{n.address ?? "—"}</span>
+                                <span className="text-[10px] text-slate-400">
+                                  {n.str_type ?? "type unknown"}
+                                  {n.is_blocking ? " · counts toward spacing" : " · not blocking"}
+                                </span>
+                              </span>
+                              <span className={`shrink-0 text-xs font-bold ${inside && n.is_blocking ? "text-red-700" : inside ? "text-amber-700" : "text-slate-600"}`}>
+                                {n.distance_ft.toLocaleString()} ft
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {out.nearby?.unlocated > 0 && (
+                        <div className="border-t border-slate-200 px-3 py-1.5 text-[10px] text-amber-700">
+                          {out.nearby.unlocated} permit{out.nearby.unlocated === 1 ? " has" : "s have"} no coordinates yet and
+                          could not be measured.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="pt-1 text-[11px] text-slate-500">
                     Rules {out.rulesVersion ?? "—"} · measured from the {parcel?.found ? "parcel boundary" : "geocoded point"} ·
                     source {parcel?.source} · {new Date(out.checkedAt).toLocaleString()}
@@ -133,10 +199,16 @@ export default function TestAddress() {
 
         <Card className="min-h-[520px] overflow-hidden"><div className="h-[560px]">
           <MapView
-            center={pick ? [pick.lat, pick.lng] : [38.035, -84.5]} zoom={pick ? 18 : 12}
-            jurisdictionId="lfucg" permits={[]} exclusion={null}
+            center={pick ? [pick.lat, pick.lng] : [38.035, -84.5]} zoom={pick ? 17 : 12}
+            jurisdictionId="lfucg" permits={permits} exclusion={exclusion}
+            spacingFt={spacingFt}
+            subject={pick ? {
+              lat: pick.lat, lng: pick.lng,
+              result: facts?.spacing_result ?? null,
+              nearest: nearby[0] ?? null,
+            } : null}
             layers={{ exclusion: true, permits: true, candidates: false, blocked: false, parcels: true, zoning: true, boundary: false }}
-            flyTo={pick ? { lat: pick.lat, lng: pick.lng, zoom: 18, nonce: Date.now() } : null}
+            flyTo={pick ? { lat: pick.lat, lng: pick.lng, zoom: 17, nonce: Date.now() } : null}
             highlight={parcel?.parcel?.geometry ?? null}
           />
         </div></Card>

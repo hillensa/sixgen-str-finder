@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveParcel } from "@/lib/gis/parcel";
 import { classifyEligibility, factsFromRow } from "@/lib/eligibility";
+import { nearestPermits } from "@/lib/gis/distance";
 import type { HoaStatus } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
@@ -53,8 +54,33 @@ export async function GET(req: Request) {
       parcelMatchConfidence: subjectSource === "parcel" ? 0.95 : null,
     }));
 
+    // How close the existing STRs actually are.
+    //
+    // The spacing test above stops looking at the rule distance, so a passing
+    // address reports no nearest-STR distance at all — the screening answers
+    // "is it legal", never "how close is the competition". This answers the
+    // second question, straight-line and clearly labelled as such, so it is
+    // never mistaken for the property-line measurement the rule uses.
+    const { data: permitRows } = await db
+      .from("str_permits")
+      .select("id,address_norm,address_raw,str_type,is_blocking,lat,lng")
+      .eq("jurisdiction_id", jid);
+    const { nearest, unlocated } = nearestPermits({ lat, lng }, permitRows ?? [], 8);
+
     return NextResponse.json({
       parcel, facts: row, eligibility,
+      nearby: {
+        measured: "straight_line_from_geocoded_point",
+        permits: nearest.map((p) => ({
+          id: p.id,
+          address: p.address_norm ?? p.address_raw,
+          str_type: p.str_type,
+          is_blocking: p.is_blocking,
+          distance_ft: p.distance_ft,
+          lat: p.lat, lng: p.lng,
+        })),
+        unlocated,
+      },
       rulesVersion: row.rules_version ?? null,
       checkedAt: new Date().toISOString(),
     });

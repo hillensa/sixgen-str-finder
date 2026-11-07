@@ -411,3 +411,35 @@ test("REGRESSION: the Top 25 row offers a visible way to open the listing", () =
   assert.ok(/See it on Zillow|Open listing/.test(page), "a labelled link, not just a gesture");
   assert.ok(/rel="noopener noreferrer"/.test(page), "opened safely in a new tab");
 });
+
+test("REGRESSION: the Top 25 list collapses out of the way", () => {
+  // Open, the list covers roughly a quarter of the map, and the map is the
+  // point of the page.
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "map", "page.tsx"), "utf8");
+  assert.ok(/setListOpen/.test(page), "the list has a collapse toggle");
+  assert.ok(/listOpen \? "w-\[310px\]" : "w-auto"/.test(page), "collapsed it shrinks to its header");
+  assert.ok(/preview && listOpen/.test(page), "and a collapsed list shows no hover card");
+});
+
+test("REGRESSION: Test Address draws the existing STRs it exists to show", () => {
+  // It shipped with permits={[]}: the page's whole purpose is seeing how close
+  // the existing STRs are, and the map was handed an empty array.
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "test-address", "page.tsx"), "utf8");
+  assert.ok(!/permits=\{\[\]\}/.test(page), "the permits layer must be fed real permits");
+  assert.ok(/permits=\{permits\}/.test(page), "from /api/market, the same source the main map uses");
+  assert.ok(/subject=\{pick/.test(page), "and the tested address gets its separation ring");
+});
+
+test("REGRESSION: the house-to-house distance is never passed off as the rule", () => {
+  // The 600 ft is property line to property line in PostGIS. The nearby list is
+  // straight-line from a point. Both are useful; conflating them is not.
+  const route = readFileSync(join(__dirname, "..", "src", "app", "api", "eligibility", "check", "route.ts"), "utf8");
+  assert.ok(/straight_line_from_geocoded_point/.test(route), "the API labels how it measured");
+
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "test-address", "page.tsx"), "utf8");
+  assert.ok(/Straight-line from the geocoded address/.test(page), "and so does the UI");
+  assert.ok(/property line to/.test(page), "naming the governing measurement alongside it");
+
+  const lib = readFileSync(join(__dirname, "..", "src", "lib", "gis", "distance.ts"), "utf8");
+  assert.ok(/NOT the regulatory measurement/.test(lib), "the helper says so at its definition");
+});

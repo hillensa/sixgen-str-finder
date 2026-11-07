@@ -34,6 +34,15 @@ type Props = {
    * invisible on a map that only ever draws the Top 25.
    */
   blocked?: CandidatePin[];
+  /**
+   * The address being tested on /test-address: its separation ring, and a line
+   * to the nearest existing STR so the distance is visible, not just tabulated.
+   */
+  subject?: {
+    lat: number; lng: number;
+    result?: string | null;
+    nearest?: { lat: number; lng: number; distance_ft: number; address: string | null } | null;
+  } | null;
   /** Separation radius in feet, read from str_rules rather than assumed. */
   spacingFt?: number | null;
   exclusion: any | null; layers: Layers;
@@ -44,7 +53,7 @@ type Props = {
 
 const zoneColor = (z: string) => /^R-1|^R-2$|^R-3$|^R-4$|^R-5$|^R-1T|^EAR/.test(z || "") ? "#2d6a4f" : /^B-|^MU|^CN|^CC|^CD/.test(z || "") ? "#9d0208" : /^A-/.test(z || "") ? "#b08968" : "#5e548e";
 
-export default function MapView({ center, zoom, jurisdictionId, permits, candidates = [], blocked = [], hoveredCandidate = null, spacingFt = null, exclusion, layers, flyTo, onMapClick, highlight }: Props) {
+export default function MapView({ center, zoom, jurisdictionId, permits, candidates = [], blocked = [], subject = null, hoveredCandidate = null, spacingFt = null, exclusion, layers, flyTo, onMapClick, highlight }: Props) {
   const el = useRef<HTMLDivElement>(null); const map = useRef<any>(null); const L = useRef<any>(null);
   const g = useRef<Record<string, any>>({}); const clickRef = useRef(onMapClick);
   // Leaflet is imported dynamically, so the map may not exist when the data
@@ -68,7 +77,7 @@ export default function MapView({ center, zoom, jurisdictionId, permits, candida
       leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(m);
       const mk = (n: string, z: number, o?: string, pe?: string) => { const p = m.createPane(n); p.style.zIndex = String(z); if (o) p.style.opacity = o; if (pe) p.style.pointerEvents = pe; };
       mk("exclusion", 350, "0.42", "none"); mk("zoning", 360, "0.35"); mk("parcels", 380); mk("boundary", 390, undefined, "none"); mk("highlight", 440, undefined, "none"); mk("pins", 460);
-      for (const k of ["exclusion", "zoning", "parcels", "boundary", "highlight", "permits", "blocked", "candidates"]) g.current[k] = leaflet.layerGroup().addTo(m);
+      for (const k of ["exclusion", "zoning", "parcels", "boundary", "highlight", "permits", "blocked", "candidates", "subject"]) g.current[k] = leaflet.layerGroup().addTo(m);
       m.on("click", (e: any) => clickRef.current?.(e.latlng.lat, e.latlng.lng));
       if (!dead) setReady(true);
     })();
@@ -180,6 +189,33 @@ export default function MapView({ center, zoom, jurisdictionId, permits, candida
       ).addTo(grp);
     });
   }, [ready, blocked, layers.blocked, spacingFt]);
+
+  // The address under test. Its ring is the separation rule drawn to scale, so
+  // "is anything inside this circle" is answerable by eye; the dashed line and
+  // its label answer "and how far is the closest one" without a popup.
+  useEffect(() => { const l = L.current, grp = g.current.subject; if (!l || !grp) return; grp.clearLayers();
+    if (!subject) return;
+    const sr = (subject.result ?? "").toUpperCase();
+    const tone = sr === "PASS" ? "#15803d" : sr === "FAIL" || sr === "REVIEW" ? "#eab308" : "#334155";
+    if (spacingFt && spacingFt > 0) {
+      l.circle([subject.lat, subject.lng], {
+        pane: "pins", radius: spacingFt * 0.3048,
+        color: tone, weight: 2, dashArray: "6 4",
+        fillColor: tone, fillOpacity: 0.12,
+      }).addTo(grp);
+    }
+    if (subject.nearest) {
+      l.polyline([[subject.lat, subject.lng], [subject.nearest.lat, subject.nearest.lng]], {
+        pane: "pins", color: "#334155", weight: 2, dashArray: "4 4", opacity: 0.8,
+      }).bindTooltip(
+        `${subject.nearest.distance_ft.toLocaleString()} ft to ${subject.nearest.address ?? "nearest STR"}`,
+        { permanent: true, direction: "center", className: "bg-white px-1 text-[10px]" },
+      ).addTo(grp);
+    }
+    l.circleMarker([subject.lat, subject.lng], {
+      pane: "pins", radius: 7, color: "#0f172a", weight: 3, fillColor: "#ffffff", fillOpacity: 1,
+    }).bindTooltip("Address under test", { direction: "top", offset: [0, -8] }).addTo(grp);
+  }, [ready, subject, spacingFt]);
 
   // Hovering a row in the Top 25 list grows its pin. Done by swapping the icon
   // on the existing marker rather than redrawing the layer, so an open popup

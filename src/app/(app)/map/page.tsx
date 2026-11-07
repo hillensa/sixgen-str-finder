@@ -28,6 +28,7 @@ export default function MapPage() {
   const [candidates, setCandidates] = useState<CandidatePin[]>([]);
   const [blocked, setBlocked] = useState<CandidatePin[]>([]);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [listOpen, setListOpen] = useState(true);
   // The hovered row's card, anchored to that row. Kept as viewport coordinates
   // because the card is fixed-position — the list scrolls under it.
   const [preview, setPreview] = useState<{ c: CandidatePin; top: number } | null>(null);
@@ -86,9 +87,19 @@ export default function MapPage() {
           question "which of these is worth driving to" needs the position and
           the yield in one view. Clicking a row flies to its pin. */}
       {candidates.length > 0 && layers.candidates && (
-        <div className="absolute right-3 top-3 z-[1200] flex max-h-[calc(100%-1.5rem)] w-[310px] flex-col rounded-lg bg-white/95 shadow-lg backdrop-blur">
-          <div className="border-b border-slate-200 px-3 py-2">
-            <div className="text-sm font-bold text-navy">Top {candidates.length}</div>
+        <div className={`absolute right-3 top-3 z-[1200] flex max-h-[calc(100%-1.5rem)] flex-col rounded-lg bg-white/95 shadow-lg backdrop-blur ${listOpen ? "w-[310px]" : "w-auto"}`}>
+          {/* Collapsed, the list is a single bar. It covers a quarter of the
+              map when open, and the map is the point. */}
+          <button
+            onClick={() => setListOpen((o) => !o)}
+            title={listOpen ? "Collapse the list" : "Show the list"}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
+          >
+            <span className={`text-[10px] text-slate-400 transition-transform ${listOpen ? "rotate-90" : ""}`}>&#9654;</span>
+            <span className="text-sm font-bold text-navy">Top {candidates.length}</span>
+          </button>
+          {listOpen && (
+          <div className="border-b border-t border-slate-200 px-3 py-2">
             <div className="text-[10px] text-slate-500">
               Hover a row for its details, click to fly to it on the map,
               or use the Zillow link to see the house.<br />
@@ -96,6 +107,8 @@ export default function MapPage() {
               Sixgen&apos;s own trailing twelve, before expenses and financing.
             </div>
           </div>
+          )}
+          {listOpen && (
           <div className="overflow-y-auto">
             {candidates.map((c, i) => {
               const rank = c.rank ?? i + 1;
@@ -149,12 +162,13 @@ export default function MapPage() {
               );
             })}
           </div>
+          )}
         </div>
       )}
 
       {/* The hover card. Sits left of the list, anchored to the row, clamped so
           a row near the bottom of a scrolled list still shows a whole card. */}
-      {preview && layers.candidates && <CandidateCard key={preview.c.property_id} c={preview.c} top={preview.top} />}
+      {preview && listOpen && layers.candidates && <CandidateCard key={preview.c.property_id} c={preview.c} top={preview.top} />}
 
       <div className="absolute bottom-4 left-3 z-[1200] w-[236px] rounded-lg bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
         <div className="mb-1.5 font-bold text-navy">Layers</div>
