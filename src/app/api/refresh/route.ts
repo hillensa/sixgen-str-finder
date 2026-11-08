@@ -13,6 +13,20 @@ export const maxDuration = 300;
  * Sync city STR layer → str_permits (source='city_gis'), match parcels,
  * re-derive the blocking flag from str_rules, rebuild the exclusion in PostGIS.
  */
+/** Every city_gis permit for a jurisdiction, paged past the PostgREST row cap. */
+async function allRows(db: any, jid: string) {
+  const PAGE = 1000; const out: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db.from("str_permits")
+      .select("id,external_id,permit_number,review_note")
+      .eq("jurisdiction_id", jid).eq("source", "city_gis")
+      .order("id", { ascending: true }).range(from, from + PAGE - 1);
+    if (error) throw new Error(`reading existing permits: ${error.message}`);
+    out.push(...(data ?? []));
+    if (!data || data.length < PAGE) return out;
+  }
+}
+
 export async function POST(req: Request) {
   const s = createClient(); let actor: string | null;
   try { ({ actor } = await requireAdminOrSecret(req, s)); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: errStatus(e) }); }
@@ -50,15 +64,39 @@ export async function POST(req: Request) {
   // re-syncing used to reset every matched permit back to 'unmatched' and wipe
   // manual corrections. They are owned by fn_link_permits_to_parcels and
   // fn_apply_blocking_rules below.
-  for (let i = 0; i < rows.length; i += 500) {
-    const { error } = await db.from("str_permits").upsert(rows.slice(i, i + 500), { onConflict: "jurisdiction_id,source,external_id" });
+  //
+  // The whole permit table must be read before anything is written, and it must
+  // be paged. A single unpaged select is capped by PostgREST at max-rows, and a
+  // capped read here silently mislabels every unread permit as "vanished from
+  // the layer".
+  const priorRows = await allRows(db, jid);
+
+  // `external_id` is the layer's ObjectID, and ArcGIS ObjectIDs are NOT stable:
+  // a republish renumbers them. Keying the upsert on it meant a renumbered
+  // layer matched nothing, inserted a second row for every permit in the
+  // county, and flagged the originals as "no longer present" — doubling the
+  // table and the blocking count in one call. `permit_number` is the licence
+  // and survives a republish, so the id is resolved through it first and the
+  // upsert updates the existing row rather than racing it.
+  const byPermitNumber = new Map<string, any>();
+  for (const r of priorRows) if (r.permit_number) byPermitNumber.set(r.permit_number, r);
+
+  const reconciled = rows.map((r) => {
+    const prior = r.permit_number ? byPermitNumber.get(r.permit_number) : null;
+    // Carry the prior row's id so this is an update, and clear any stale
+    // "no longer present" note: it is plainly present again.
+    return prior ? { ...r, id: prior.id, external_id: prior.external_id, review_note: r.review_note ?? null } : r;
+  });
+
+  for (let i = 0; i < reconciled.length; i += 500) {
+    const { error } = await db.from("str_permits").upsert(reconciled.slice(i, i + 500), { onConflict: "jurisdiction_id,source,external_id" });
     if (error) return NextResponse.json({ error: `permits: ${error.message}` }, { status: 500 });
   }
 
-  // 1b. records that vanished from the layer keep blocking, but are flagged
-  const seen = new Set(rows.map((r) => r.external_id));
-  const { data: existing } = await db.from("str_permits").select("id,external_id,review_note").eq("jurisdiction_id", jid).eq("source", "city_gis");
-  const dropped = (existing ?? []).filter((r: any) => !seen.has(r.external_id));
+  // 1b. records that vanished from the layer keep blocking, but are flagged.
+  // Matched on permit_number for the same reason as above.
+  const seen = new Set(reconciled.map((r) => r.permit_number).filter(Boolean));
+  const dropped = priorRows.filter((r: any) => r.permit_number && !seen.has(r.permit_number));
   if (dropped.length) {
     await db.from("str_permits")
       .update({ review_note: `No longer present in the LFUCG layer as of ${now.slice(0, 10)} — status unverified, still counted as blocking.`, updated_at: now })

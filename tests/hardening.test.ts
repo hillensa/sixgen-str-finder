@@ -443,3 +443,24 @@ test("REGRESSION: the house-to-house distance is never passed off as the rule", 
   const lib = readFileSync(join(__dirname, "..", "src", "lib", "gis", "distance.ts"), "utf8");
   assert.ok(/NOT the regulatory measurement/.test(lib), "the helper says so at its definition");
 });
+
+test("REGRESSION: a renumbered ArcGIS layer must not duplicate the permit table", () => {
+  // ArcGIS ObjectIDs are not stable across a republish. Keying the permit
+  // upsert on one meant the 2026-11-07 refresh matched nothing, inserted a
+  // second row for every permit in Fayette County (738 -> 1484), flagged the
+  // originals as vanished, and doubled the blocking count feeding the density
+  // test. permit_number is the licence and survives a republish.
+  const route = readFileSync(join(__dirname, "..", "src", "app", "api", "refresh", "route.ts"), "utf8");
+  assert.ok(/byPermitNumber/.test(route), "identity is resolved through permit_number");
+  assert.ok(/prior \? \{ \.\.\.r, id: prior\.id/.test(route), "a known permit updates its existing row");
+  assert.ok(/seen\.has\(r\.permit_number\)/.test(route), "and 'vanished' is judged on the stable key too");
+});
+
+test("REGRESSION: the existing-permit read is paged past the PostgREST row cap", () => {
+  // An unpaged select is capped at max-rows. Capped here, every permit past the
+  // cap reads as absent from the layer and gets flagged as vanished — which is
+  // why the bad run reported 254 dropped out of a table of 1484.
+  const route = readFileSync(join(__dirname, "..", "src", "app", "api", "refresh", "route.ts"), "utf8");
+  assert.ok(/\.range\(from, from \+ PAGE - 1\)/.test(route), "it pages");
+  assert.ok(/data\.length < PAGE/.test(route), "and stops on a short page, not a guess");
+});
