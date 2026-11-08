@@ -239,11 +239,23 @@ export function normalizeRow(row: Record<string, string>): NormalizedListing | n
 }
 
 export class CsvProvider implements ListingsProvider {
-  readonly id = "csv";
+  readonly id: string = "csv";
   async searchListings(_marketId: string, opts?: { input?: string }) {
     if (!opts?.input) return [];
     return parseCsv(opts.input).map(parseListingRow).filter((x): x is ParsedListing => !!x);
   }
+}
+
+/**
+ * The weekly Zillow pull. Same CSV shape as the MLS export, but its own
+ * provider id — and that is the point. A full sync retires only listings of
+ * the same provider that are missing from the new set, so with its own id the
+ * weekly pull can retire homes that left the Zillow search without marking a
+ * single MLS-exported listing as removed. Under the shared "csv" id it would
+ * have retired the whole MLS set every week.
+ */
+export class ZillowProvider extends CsvProvider {
+  readonly id: string = "zillow";
 }
 
 /** JSON array of NormalizedListing-ish objects (also accepts the legacy {zpid,lat,lng,...} shape). */

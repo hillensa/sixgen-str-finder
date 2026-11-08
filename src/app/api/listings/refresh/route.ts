@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, requireAdminOrSecret, errStatus, audit } from "@/lib/supabase/admin";
-import { getProvider, CsvProvider, JsonProvider } from "@/lib/providers/listings";
+import { getProvider, CsvProvider, JsonProvider, ZillowProvider } from "@/lib/providers/listings";
 import { runRefresh } from "@/lib/listings/refresh";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -28,11 +28,12 @@ export async function POST(req: Request) {
   const marketId = body.market ?? "lexington-ky";
   const provider = body.format === "json" ? new JsonProvider()
     : body.format === "csv" ? new CsvProvider()
+    : body.format === "zillow" ? new ZillowProvider()
     : getProvider();
 
   // A pasted payload is required for the csv/json providers; a future feed
   // provider fetches its own set and needs none.
-  if ((provider.id === "csv" || provider.id === "json") && !body.input) {
+  if ((provider.id === "csv" || provider.id === "json" || provider.id === "zillow") && !body.input) {
     return NextResponse.json({ error: "input (CSV or JSON text) is required for this provider." }, { status: 400 });
   }
 

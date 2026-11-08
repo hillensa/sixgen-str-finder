@@ -464,3 +464,30 @@ test("REGRESSION: the existing-permit read is paged past the PostgREST row cap",
   assert.ok(/\.range\(from, from \+ PAGE - 1\)/.test(route), "it pages");
   assert.ok(/data\.length < PAGE/.test(route), "and stops on a short page, not a guess");
 });
+
+test("REGRESSION: the weekly Zillow pull has its own provider, so a full sync cannot retire MLS listings", () => {
+  // Full sync retires same-provider listings missing from the new set. Under the
+  // shared "csv" id a Zillow pull would have marked every MLS-exported listing
+  // removed, every week.
+  const prov = readFileSync(join(__dirname, "..", "src", "lib", "providers", "listings.ts"), "utf8");
+  assert.ok(/class ZillowProvider extends CsvProvider/.test(prov));
+  assert.ok(/readonly id: string = "zillow"/.test(prov));
+  const route = readFileSync(join(__dirname, "..", "src", "app", "api", "listings", "refresh", "route.ts"), "utf8");
+  assert.ok(/body\.format === "zillow" \? new ZillowProvider\(\)/.test(route));
+});
+
+test("REGRESSION: a partial Zillow pull never full-syncs, and pages are checksum-verified", () => {
+  // A pull cut short by a challenge page, full-synced, would retire every home
+  // on the pages it missed.
+  const py = readFileSync(join(__dirname, "..", "scripts", "zillow_weekly.py"), "utf8");
+  assert.ok(/"fullSync": complete/.test(py), "full sync only when the pull is complete");
+  assert.ok(/COMPLETE_RATIO = 0\.95/.test(py));
+  assert.ok(/Unverified page files/.test(py), "an unverified page blocks the import");
+  assert.ok(/MIN_BEDS, MIN_BATHS = 4, 3/.test(py), "criteria enforced locally as well as in the URL");
+
+  // The extractor reads the rendered page; it must never make requests of its
+  // own, which is what Zillow's bot protection challenges.
+  const js = readFileSync(join(__dirname, "..", "scripts", "zillow_extract.js"), "utf8");
+  assert.ok(!/fetch\(/.test(js.replace(/^\s*\/\/.*$/gm, "")), "no fetch() outside comments");
+  assert.ok(/blocked: true/.test(js), "and it reports a challenge page instead of pushing past it");
+});
