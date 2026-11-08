@@ -2,10 +2,22 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, requireAdminOrSecret, errStatus, audit } from "@/lib/supabase/admin";
 import { scoreCandidates, type Candidate, type Weight, type DemandPoint } from "@/lib/scoring/score";
+import { onePerProperty, duplicateCount } from "@/lib/listings/onePerProperty";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const BATCH = 200;
+
+/** listing_id -> last_seen, for choosing between two listings of one house. */
+async function lastSeenFor(db: any, rows: { listing_id: number | null }[]) {
+  const ids = [...new Set(rows.map((r) => r.listing_id).filter((x): x is number => x != null))];
+  const out = new Map<number, string | null>();
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data } = await db.from("listings").select("id,last_seen").in("id", ids.slice(i, i + 300));
+    for (const r of data ?? []) out.set(r.id, r.last_seen);
+  }
+  return out;
+}
 
 const toCandidate = (r: any): Candidate => ({
   propertyId: r.property_id, address: r.address,
@@ -45,7 +57,11 @@ export async function POST(req: Request) {
     db.rpc("fn_rule_num", { p_jurisdiction: "lfucg", p_key: "max_guests_per_bedroom", p_zone: null, p_str_type: null }),
   ]);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!rows?.length) {
+  // One listing per house, or a house carried by two sources is scored twice
+  // and skews every relative factor.
+  const folded = duplicateCount(rows ?? []);
+  const rows1 = onePerProperty(rows ?? [], await lastSeenFor(db, rows ?? []));
+  if (!rows1.length) {
     return NextResponse.json({ ok: true, market: marketId, scored: 0, message: "No candidates yet — run a listings refresh first.", elapsedMs: Date.now() - t0 });
   }
 
@@ -55,19 +71,19 @@ export async function POST(req: Request) {
   }
   const demand: DemandPoint[] = (demandRows ?? []).map((d: any) => ({ lat: d.lat, lng: d.lng, t12Revenue: Number(d.t12_revenue), name: d.name }));
 
-  const result = scoreCandidates(rows.map(toCandidate), weights, {
+  const result = scoreCandidates(rows1.map(toCandidate), weights, {
     demand,
     guestsPerBedroom: capacityRule == null ? 2 : Number(capacityRule),
   });
 
   // one row per property, gated or not, so the Top 25 and the review lists both
   // read from the same computation
-  const rulesVersion = rows.find((r: any) => r.rules_version)?.rules_version ?? null;
-  const modelVersion = rows.find((r: any) => r.model_version)?.model_version ?? null;
+  const rulesVersion = rows1.find((r: any) => r.rules_version)?.rules_version ?? null;
+  const modelVersion = rows1.find((r: any) => r.model_version)?.model_version ?? null;
   const now = new Date().toISOString();
   const payload = [...result.ranked, ...result.gated].map((sc) => ({
     property_id: sc.candidate.propertyId,
-    listing_id: rows.find((r: any) => r.property_id === sc.candidate.propertyId)?.listing_id ?? null,
+    listing_id: rows1.find((r: any) => r.property_id === sc.candidate.propertyId)?.listing_id ?? null,
     score: sc.score ?? 0,
     rank: sc.rank,
     gated: sc.gated,
@@ -85,12 +101,12 @@ export async function POST(req: Request) {
     if (e) return NextResponse.json({ error: `writing scores: ${e.message}` }, { status: 500 });
   }
 
-  const message = `${result.ranked.length} ranked · ${result.gated.length} gated · ${result.requiresReview.length} require review · ${result.needsHoaVerification.length} need HOA verification`;
+  const message = `${result.ranked.length} ranked · ${result.gated.length} gated · ${result.requiresReview.length} require review · ${result.needsHoaVerification.length} need HOA verification${folded ? ` · ${folded} duplicate listing${folded === 1 ? "" : "s"} folded into their house` : ""}`;
   await audit(db, actor, "scores.run", "market", marketId, { ranked: result.ranked.length, gated: result.gated.length, ms: Date.now() - t0 });
 
   return NextResponse.json({
     ok: true, market: marketId,
-    scored: result.ranked.length, gated: result.gated.length,
+    scored: result.ranked.length, gated: result.gated.length, duplicatesFolded: folded,
     requiresReview: result.requiresReview.length,
     needsHoaVerification: result.needsHoaVerification.length,
     weightsUsed: result.weightsUsed,
@@ -111,16 +127,17 @@ export async function GET(req: Request) {
   const limit = Math.min(200, Math.max(1, Number(u.searchParams.get("limit") ?? 25) || 25));
 
   const [{ data: top, error }, { data: summary }, { data: weights }] = await Promise.all([
-    s.from("v_top_candidates").select("*").eq("market_id", marketId).limit(limit),
+    // over-fetched: a house with two listings comes back twice, and is folded below
+    s.from("v_top_candidates").select("*").eq("market_id", marketId).limit(limit * 2),
     s.rpc("fn_acquisition_summary", { p_market: marketId }),
     s.rpc("fn_scoring_weights", { p_market: marketId }),
   ]);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
   const [{ data: needsHoa }, { data: review }, { data: gated }] = await Promise.all([
-    s.from("v_top_candidates").select("property_id,address,list_price,beds,score,hoa_status,forecast_revenue,gross_yield_pct")
+    s.from("v_top_candidates").select("property_id,listing_id,address,list_price,beds,score,hoa_status,forecast_revenue,gross_yield_pct")
       .eq("market_id", marketId).neq("hoa_status", "VERIFIED_NO_HOA").order("score", { ascending: false }).limit(25),
-    s.from("v_top_candidates").select("property_id,address,list_price,beds,score,classification,eligibility_summary")
+    s.from("v_top_candidates").select("property_id,listing_id,address,list_price,beds,score,classification,eligibility_summary")
       .eq("market_id", marketId).eq("classification", "YELLOW").order("score", { ascending: false }).limit(25),
     s.from("v_latest_score").select("property_id,gate_reason").eq("gated", true).limit(50),
   ]);
@@ -130,16 +147,20 @@ export async function GET(req: Request) {
   // only ever draw the passing case, and "too close to an existing STR" would
   // be a state the operator never sees.
   const { data: spacingFailed } = await s.from("v_acquisition_candidates")
-    .select("property_id,address,lat,lng,list_price,beds,classification,hoa_status,"
+    .select("property_id,listing_id,address,lat,lng,list_price,beds,classification,hoa_status,"
       + "spacing_result,nearest_str_distance_ft,external_id,zip,url,forecast_revenue,gross_yield_pct")
     .eq("market_id", marketId).eq("spacing_result", "FAIL").limit(300);
 
+  const seen = await lastSeenFor(s, [...(top ?? []), ...((spacingFailed ?? []) as any[]), ...(needsHoa ?? []), ...(review ?? [])]);
+  const fold = (xs: any[] | null): any[] =>
+    onePerProperty((xs ?? []).map((x: any) => ({ listing_id: null, ...x })), seen);
+
   return NextResponse.json({
-    top: top ?? [],
-    needsHoaVerification: needsHoa ?? [],
-    requiresReview: review ?? [],
+    top: fold(top).slice(0, limit),
+    needsHoaVerification: fold(needsHoa),
+    requiresReview: fold(review),
     gatedCount: gated?.length ?? 0,
-    spacingFailed: (spacingFailed ?? []).filter((r: any) => r.lat != null && r.lng != null),
+    spacingFailed: fold(spacingFailed).filter((r: any) => r.lat != null && r.lng != null),
     summary: summary?.[0] ?? null,
     weights: weights ?? [],
   });
