@@ -34,7 +34,13 @@ nothing is marked eligible because a field was empty.
 - [x] Fix permit refresh keying on unstable ArcGIS ObjectIDs (dc24ffc)
 - [ ] Delete the 742 duplicate permit rows (needs Seth's yes — see Blockers)
 - [ ] Re-link parcels, re-apply blocking rules, rebuild exclusion, re-screen listings
-- [ ] Refresh the for-sale listings from a fresh ImagineMLS export
+- [x] Import Zillow "Lexington with pool" search, page 1 (41 homes, with photos + links)
+- [x] Fold duplicate listings so each house is scored and listed once (a00771c)
+- [x] Weekly Zillow pull: `zillow` provider, extractor, checksum-verified import (34e56fc)
+- [x] First weekly-criteria pull: 41 of 113 (Zillow challenged page 2) — partial import
+- [x] Scheduled task `sixgen-weekly-zillow-pull`, Mondays 7:08 AM local
+- [ ] Seth: complete Zillow's Press & Hold in the Browser pane, then "Run now" on the task
+- [ ] Decide whether to retire the September MLS listings (162 rows, provider csv)
 - [ ] Decide the photo source — Street View key, or re-cut the export (below)
 - [ ] Resolve whether an LFUCG permit survives a sale (below)
 - [ ] Confirm the 600-ft rule and zoning treatments with LFUCG Planning
@@ -67,6 +73,18 @@ nothing is marked eligible because a field was empty.
   enforces it. Upgrading them to parcel-edge needs a new PostGIS function and a
   migration (this machine has no DB connection string — DDL goes through the
   Supabase SQL editor).
+- **Zillow is the weekly source; it is not fully automatic.** Zillow's bot
+  protection (PerimeterX) challenged the in-app browser after a handful of
+  page loads — first a scripted fetch, then a "Next page" click, then any load
+  (HTTP 403). The weekly task stops at a challenge, imports what it verified as
+  a PARTIAL (no listing retired), and asks Seth to press-and-hold and re-run.
+  It never attempts the challenge. If partial runs become the norm, stale
+  Zillow listings are never retired — fall back to the ImagineMLS export.
+- **Zillow's "HOA <= $0" filter includes homes with no HOA data**, which is most
+  Lexington single-family listings. In the app they stay HOA_UNKNOWN; nothing
+  from a feed is treated as verified no-HOA.
+- **One listing per house.** A house in both the MLS export and Zillow is
+  folded to its most recently seen listing before scoring and display.
 - **`fullSync` defaults to false** on refresh. It defaulted true in Phase 1 and
   a five-row correction marked every other listing in the market as removed.
 - Seeded zoning treatments and the 600-ft citation are marked "(verify)". The
@@ -131,7 +149,15 @@ and it corrupts. This has bitten twice. Kill the dev server first.
 **Current data:** 158 properties, 162 active listings, 738 permits, 17 Sixgen
 properties, 162 scores. 35 ranked, 127 gated. Spacing: 125 PASS, 37 FAIL.
 
-**To refresh listings:** export from https://imagine.flexmls.com/ using the
+**Weekly Zillow pull:** the task prompt is at
+`C:/Users/hille/.claude/scheduled-tasks/sixgen-weekly-zillow-pull/SKILL.md`.
+By hand: `python scripts/zillow_weekly.py url`, open it in the Browser pane, run
+`scripts/zillow_extract.js` in the page for each results page, write each `psv`
+to `data/zillow/<date>/p<N>.psv`, `python scripts/zillow_weekly.py verify <file> <sha>`,
+then `python scripts/zillow_weekly.py import data/zillow/<date> --expected-total <N>`.
+Run data is gitignored.
+
+**To refresh listings from the MLS instead:** export from https://imagine.flexmls.com/ using the
 saved search (Lexington, >= $400k, 4+ bed, 3+ bath, single-family, no HOA), then
 upload the CSV with the "Weekly MLS export" button on `/admin`. The export is
 Windows-1252, not UTF-8, and flexmls publishes decimals into integer columns —
