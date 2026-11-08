@@ -8,6 +8,7 @@
 //
 // Returns one of:
 //   { blocked: true, ... }   a challenge page — STOP, do not try to solve it
+//   { stale: true, ... }     Zillow changed pages in place — reload the URL, rerun
 //   { blocked: false, page, totalPages, total, count, sha256, psv, filters }
 //
 // `psv` is one line per home, pipe-separated, newline-terminated:
@@ -24,6 +25,15 @@
   }
   const nd = JSON.parse(el.textContent);
   const sps = nd?.props?.pageProps?.searchPageState;
+  // Zillow may change pages in place, leaving __NEXT_DATA__ on the page that
+  // was first loaded. Reading it then would re-capture the wrong page.
+  const dataPage = sps?.queryState?.pagination?.currentPage || 1;
+  const urlMatch = String(location.pathname).match(/\/(\d+)_p\/?$/);
+  const urlPage = urlMatch ? Number(urlMatch[1]) : 1;
+  if (dataPage !== urlPage) {
+    return { blocked: false, stale: true, urlPage, dataPage,
+      note: 'Page changed in place. Reload this same URL (navigate to it), wait, and run the extractor again.' };
+  }
   const list = sps?.cat1?.searchResults?.listResults || [];
   const clean = (v) => String(v ?? '').replace(/[|\r\n]/g, ' ').trim();
   const photoHash = (u) => {

@@ -9,6 +9,7 @@ const NAV = [
   { href: "/map", label: "Map", icon: "◎" },
   { href: "/top25", label: "Top 25", icon: "🏆" },
   { href: "/listings", label: "All Listings", icon: "☰" },
+  { href: "/zillow", label: "Zillow Pull", icon: "⟳" },
   { href: "/test-address", label: "Test Address", icon: "⌖" },
   { href: "/pipeline", label: "Pipeline", icon: "⇥" },
   { href: "/comps", label: "Sixgen Comps", icon: "≋" },

@@ -9,6 +9,7 @@
     "src/app/api/listings/import/route.ts": { "maxDuration": 300 },
     "src/app/api/sixgen/import/route.ts": { "maxDuration": 300 },
     "src/app/api/forecasts/route.ts": { "maxDuration": 300 },
-    "src/app/api/scores/route.ts": { "maxDuration": 300 }
+    "src/app/api/scores/route.ts": { "maxDuration": 300 },
+    "src/app/api/zillow/import/route.ts": { "maxDuration": 300 }
   }
 }
