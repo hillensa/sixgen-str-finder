@@ -18,6 +18,7 @@
  * losing the enrichment costs accuracy on this run, and the next refresh will
  * try again. Errors are recorded in `data_errors` and returned to the caller.
  */
+import { writeParcels } from "../gis/parcelStore";
 import { fetchParcelsForPoints, fetchZoningForPoints } from "../arcgis";
 import { ringsToMultiPolygon, parcelAttrs } from "../gis/parcel";
 import { upsertZoningDistricts } from "../gis/zoning";
@@ -73,12 +74,9 @@ export async function cacheGisForPoints(
           attrs: p.attrs, fetched_at: now, pva_id: pvaId, acreage,
         };
       });
-      for (let i = 0; i < rows.length; i += 200) {
-        const { error } = await db.from("parcels")
-          .upsert(rows.slice(i, i + 200), { onConflict: "jurisdiction_id,source_object_id" });
-        if (error) { await note(`Caching parcels failed: ${error.message}`); break; }
-        result.parcels += rows.slice(i, i + 200).length;
-      }
+      const pw = await writeParcels(db, rows);
+      if (pw.error) await note(`Caching parcels failed: ${pw.error}`);
+      result.parcels += pw.inserted + pw.updated;
     } catch (e: any) {
       await note(`Parcel fetch failed: ${e.message}`);
     }

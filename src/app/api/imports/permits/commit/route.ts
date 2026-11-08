@@ -1,3 +1,4 @@
+import { writeParcels } from "@/lib/gis/parcelStore";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, requireAdmin, errStatus, audit } from "@/lib/supabase/admin";
@@ -162,10 +163,8 @@ export async function POST(req: Request) {
         geom: ringsToMultiPolygon(p.rings), attrs: p.attrs, fetched_at: new Date().toISOString(),
         pva_id: parcelAttrs(p.attrs).pvaId, acreage: parcelAttrs(p.attrs).acreage,
       }));
-      for (let i = 0; i < parcelRows.length; i += 200) {
-        const { error } = await db.from("parcels").upsert(parcelRows.slice(i, i + 200), { onConflict: "jurisdiction_id,source_object_id" });
-        if (error) return fail(`Writing parcels failed: ${error.message}`);
-      }
+      const pw = await writeParcels(db, parcelRows);
+      if (pw.error) return fail(`Writing parcels failed: ${pw.error}`);
       parcelCount = parcelRows.length;
     } catch (e: any) {
       await db.from("data_errors").insert({ category: "gis", entity: "imports", entity_id: String(importId), message: `Parcel fetch failed: ${e.message}` });

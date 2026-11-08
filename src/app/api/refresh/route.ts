@@ -6,6 +6,7 @@ import { ringsToMultiPolygon, parcelAttrs } from "@/lib/gis/parcel";
 import { normalizeAddress } from "@/lib/address";
 import proj4 from "proj4";
 import { dedupeByIdentity, reconcileWithPrior, missingFrom } from "@/lib/permitIdentity";
+import { writeParcels } from "@/lib/gis/parcelStore";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
@@ -110,10 +111,9 @@ export async function POST(req: Request) {
       pva_id: pvaId, acreage,
     };
   });
-  for (let i = 0; i < parcelRows.length; i += 200) {
-    const { error } = await db.from("parcels").upsert(parcelRows.slice(i, i + 200), { onConflict: "jurisdiction_id,source_object_id" });
-    if (error) return NextResponse.json({ error: `parcels: ${error.message}` }, { status: 500 });
-  }
+  // keyed on PVA number, not the renumberable ObjectID (lib/gis/parcelStore.ts)
+  const pw = await writeParcels(db, parcelRows);
+  if (pw.error) return NextResponse.json({ error: `parcels: ${pw.error}` }, { status: 500 });
 
   // 3. link permits → parcels spatially (single SQL pass; never clobbers manual)
   const { data: linked } = await db.rpc("fn_link_permits_to_parcels", { p_jurisdiction: jid });
@@ -137,7 +137,7 @@ export async function POST(req: Request) {
   await audit(db, actor, "gis.refresh", "jurisdiction", jid, { permits: rows.length, parcels: parcels.length, blocking, unclassified: unclassified.length, unlocated, dropped: dropped.length, ms: Date.now() - t0 });
 
   return NextResponse.json({
-    ok: true, permits: rows.length, layerDuplicates, blocking, unclassified: unclassified.length, unlocated,
+    ok: true, permits: rows.length, layerDuplicates, parcelsInserted: pw.inserted, parcelsUpdated: pw.updated, blocking, unclassified: unclassified.length, unlocated,
     parcels: parcels.length, linked: linked ?? 0, dropped: dropped.length,
     exclusion: ex?.[0] ?? null, elapsedMs: Date.now() - t0,
   });

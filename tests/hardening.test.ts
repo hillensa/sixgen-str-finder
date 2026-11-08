@@ -524,3 +524,20 @@ test("REGRESSION: no server-side Supabase read can be served from Next's fetch c
     assert.ok(/global: \{ fetch: noStoreFetch \}/.test(src), `${f.join("/")} must use noStoreFetch`);
   }
 });
+
+test("REGRESSION: no parcel write keys on the renumberable ArcGIS ObjectID", () => {
+  // The 2026-11-07 sync re-inserted every parcel it touched (1396 rows for 874
+  // parcels) because every writer upserted on source_object_id. All four now go
+  // through writeParcels, keyed on the PVA number.
+  const files = [
+    ["src", "app", "api", "refresh", "route.ts"],
+    ["src", "app", "api", "imports", "permits", "commit", "route.ts"],
+    ["src", "lib", "listings", "cacheGis.ts"],
+    ["src", "lib", "gis", "parcel.ts"],
+  ];
+  for (const f of files) {
+    const src = readFileSync(join(__dirname, "..", ...f), "utf8");
+    assert.ok(/writeParcels\(/.test(src), `${f.join("/")} writes through writeParcels`);
+    assert.ok(!/from\("parcels"\)\s*\.upsert/.test(src), `${f.join("/")} must not upsert parcels directly`);
+  }
+});

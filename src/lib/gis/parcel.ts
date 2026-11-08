@@ -1,3 +1,4 @@
+import { writeParcels } from "./parcelStore";
 import { fetchParcelAtPoint, fetchZoningAtPoint } from "../arcgis";
 import { upsertZoningDistricts } from "./zoning";
 import type { Jurisdiction, ParcelLookup } from "../types";
@@ -87,11 +88,14 @@ export async function resolveParcel(db: any, j: Jurisdiction, lng: number, lat: 
     if (p) {
       parcelGeom = ringsToMultiPolygon(p.rings);
       const { pvaId, acreage } = parcelAttrs(p.attrs);
-      const { data: ins } = await db.from("parcels").upsert({
+      const pw = await writeParcels(db, [{
         jurisdiction_id: j.id, source_object_id: p.objectId, pva_id: pvaId,
         address: p.attrs?.ADDRESS ?? null, acreage,
         centroid_lng: lng, centroid_lat: lat, geom: parcelGeom, attrs: p.attrs, fetched_at: now,
-      }, { onConflict: "jurisdiction_id,source_object_id" }).select("id,address,zone_code,acreage,pva_id").single();
+      }]);
+      const savedId = (pvaId ? pw.ids.byPva.get(String(pvaId).trim()) : undefined) ?? pw.ids.byObject.get(Number(p.objectId));
+      const { data: ins } = savedId == null ? { data: null }
+        : await db.from("parcels").select("id,address,zone_code,acreage,pva_id").eq("id", savedId).single();
       parcelRow = ins ? { parcel_id: ins.id, address: ins.address, zone_code: ins.zone_code, acreage: ins.acreage, pva_id: ins.pva_id, source_object_id: p.objectId } : null;
     }
   }
