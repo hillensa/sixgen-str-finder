@@ -491,3 +491,23 @@ test("REGRESSION: a partial Zillow pull never full-syncs, and pages are checksum
   assert.ok(!/fetch\(/.test(js.replace(/^\s*\/\/.*$/gm, "")), "no fetch() outside comments");
   assert.ok(/blocked: true/.test(js), "and it reports a challenge page instead of pushing past it");
 });
+
+test("REGRESSION: the map gets every permit, not the first thousand", () => {
+  // An unpaged select stops at PostgREST max-rows. The layer read "1000
+  // permits" off a 1484-row table and silently dropped the rest.
+  const route = readFileSync(join(__dirname, "..", "src", "app", "api", "market", "route.ts"), "utf8");
+  assert.ok(/allPermits\(s\)/.test(route));
+  assert.ok(/\.range\(from, from \+ PAGE - 1\)/.test(route), "it pages");
+});
+
+test("REGRESSION: the Existing STRs layer is legible and labelled against its buffers", () => {
+  // Toggling the layer worked, but radius-5 dots inside red buffers barely
+  // showed, and the unlabelled red read as "the STRs" — so unticking the box
+  // looked like it did nothing.
+  const mv = readFileSync(join(__dirname, "..", "src", "components", "MapView.tsx"), "utf8");
+  assert.ok(/circleMarker\(\[p\.lat, p\.lng\], \{ pane: "pins", radius: 7, color: "#fff", weight: 2\.5/.test(mv));
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(app)", "map", "page.tsx"), "utf8");
+  assert.ok(/Existing STRs\$\{pc\.total \? ` \(\$\{pc\.total\}\)` : ""\} — dots/.test(page), "the layer says it draws dots");
+  assert.ok(/buffers around them — red/.test(page), "and the buffers say they are red");
+  assert.ok(/\(\[k, label, swatch\]\)/.test(page), "every layer row carries a swatch");
+});

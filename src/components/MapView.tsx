@@ -90,7 +90,10 @@ export default function MapView({ center, zoom, jurisdictionId, permits, candida
   }, [ready, exclusion, layers.exclusion]);
 
   useEffect(() => { const l = L.current, grp = g.current.permits; if (!l || !grp) return; grp.clearLayers(); if (!layers.permits) return;
-    for (const p of permits) l.circleMarker([p.lat, p.lng], { pane: "pins", radius: 5, color: "#fff", weight: 1.5, fillColor: p.is_blocking ? "#14213d" : "#6b7280", fillOpacity: 1 })
+    // Sized and ringed to read against the red buffers they sit inside: at
+    // radius 5 with a hairline ring they all but vanished there, and toggling
+    // the layer looked like it did nothing.
+    for (const p of permits) l.circleMarker([p.lat, p.lng], { pane: "pins", radius: 7, color: "#fff", weight: 2.5, fillColor: p.is_blocking ? "#14213d" : "#6b7280", fillOpacity: 1 })
       .bindTooltip(`<b>${p.address_norm ?? p.address_raw}</b><br>${p.str_type ?? "type unknown"} · ${p.is_blocking ? "counts toward spacing" : "not blocking"}`, { direction: "top", offset: [0, -6] })
       .bindPopup(`<b>${p.address_norm ?? p.address_raw}</b><br>Existing STR permit<br>Type: ${p.str_type ?? "unknown"}<br>Blocking: ${p.is_blocking ? "yes" : "no"}<br><small>Source: ${p.source}</small>`).addTo(grp);
   }, [ready, permits, layers.permits]);

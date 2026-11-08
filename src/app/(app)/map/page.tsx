@@ -172,8 +172,28 @@ export default function MapPage() {
 
       <div className="absolute bottom-4 left-3 z-[1200] w-[236px] rounded-lg bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
         <div className="mb-1.5 font-bold text-navy">Layers</div>
-        {([["candidates", `Top 25 candidates${candidates.length ? ` (${candidates.length})` : ""}`], ["blocked", `Blocked by proximity${blocked.length ? ` (${blocked.length})` : ""}`], ["permits", "Existing STRs"], ["exclusion", "600-ft regulatory buffers"], ["parcels", "Fayette parcels (zoom 16+)"], ["zoning", "Lexington zoning (zoom 13+)"], ["boundary", "County boundary"]] as const).map(([k, label]) => (
-          <label key={k} className="mb-1 flex cursor-pointer items-center gap-2"><input type="checkbox" checked={layers[k]} onChange={(e) => setLayers((s) => ({ ...s, [k]: e.target.checked }))} />{label}</label>
+        {/* Each row carries a swatch of exactly what it draws. Without them the
+            red 600-ft buffers read as "the existing STRs", so unticking the
+            STR dots appeared to do nothing — the red stayed, because it is a
+            different layer. */}
+        {([
+          ["candidates", `Top 25 candidates${candidates.length ? ` (${candidates.length})` : ""}`,
+            <span key="s" className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#c9a227] text-[7px] font-bold text-navy ring-1 ring-[#15803d]">1</span>],
+          ["blocked", `Blocked by proximity${blocked.length ? ` (${blocked.length})` : ""}`,
+            <span key="s" className="h-3 w-3 rounded-full border-2 border-[#a16207] bg-[#fde047]" />],
+          ["permits", `Existing STRs${pc.total ? ` (${pc.total})` : ""} — dots`,
+            <span key="s" className="h-3 w-3 rounded-full border-2 border-white bg-[#14213d] shadow ring-1 ring-slate-400" />],
+          ["exclusion", `${spacingFt ?? 600}-ft buffers around them — red`,
+            <span key="s" className="h-3 w-3 rounded-sm bg-[#c1121f]/40" />],
+          ["parcels", "Fayette parcels (zoom 16+)", <span key="s" className="h-3 w-3 rounded-sm border border-slate-500" />],
+          ["zoning", "Lexington zoning (zoom 13+)", <span key="s" className="h-3 w-3 rounded-sm bg-[#2d6a4f]/40" />],
+          ["boundary", "County boundary", <span key="s" className="h-0 w-3 border-t-2 border-dashed border-slate-700" />],
+        ] as const).map(([k, label, swatch]) => (
+          <label key={k} className="mb-1 flex cursor-pointer items-center gap-2">
+            <input type="checkbox" checked={layers[k]} onChange={(e) => setLayers((s) => ({ ...s, [k]: e.target.checked }))} />
+            <span className="flex w-3.5 shrink-0 justify-center">{swatch}</span>
+            {label}
+          </label>
         ))}
         <div className="mt-2 border-t pt-2 text-[10px] text-slate-500">{pc.total} permits · {pc.blocking} blocking · {pc.hosted} hosted{pc.unlocated ? ` · ${pc.unlocated} awaiting geocode` : ""}{data.exclusionMeta ? ` · buffers ${data.exclusionMeta.rulesVersion}` : " · no buffers yet (import permits)"}</div>
         <div className="mt-1 text-[10px] text-slate-400">{candidates.length ? `${candidates.length} ranked candidates — numbered gold pins${spacingFt ? ` ringed in green by their ${spacingFt}-ft separation radius. Every ranked candidate passes separation; the ${blocked.length} that fail are on the yellow layer, gated out of the ranking.` : "."}` : "No ranked candidates yet — import listings, run forecasts, then re-rank."}</div>
