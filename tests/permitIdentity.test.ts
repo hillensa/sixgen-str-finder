@@ -48,3 +48,37 @@ test("a permit genuinely gone from the layer is reported, by identity", () => {
   const prior = [{ id: 1, external_id: "a", ...steamboat }, { id: 2, external_id: "b", ...chinoe }];
   assert.deepEqual(missingFrom(prior, [steamboat]).map((r) => r.id), [2]);
 });
+
+test("an address the city corrects on an existing permit updates that permit", () => {
+  // 15063018-1: 1010 Cramer Ave unit 120 became unit 201 between pulls.
+  const prior = [{ id: 189, external_id: "10485", permit_number: "15063018-1", address_norm: "1010 CRAMER AVENUE 120" }];
+  const incoming = [{ external_id: "11221", review_note: null, permit_number: "15063018-1", address_norm: "1010 CRAMER AVENUE 201" }];
+  const out = reconcileWithPrior(incoming, prior);
+  assert.equal(out[0].id, 189, "the stored row is updated, not duplicated");
+  assert.equal(out[0].address_norm, "1010 CRAMER AVENUE 201", "and takes the corrected address");
+  assert.equal(missingFrom(prior, out).length, 0, "so it is not also reported as vanished");
+});
+
+test("an ambiguous change is left as a new permit rather than guessed", () => {
+  // two unmatched incoming rows under one number, one stored orphan: no guess
+  const prior = [{ id: 1, external_id: "a", permit_number: "9-1", address_norm: "1 OLD RD" }];
+  const incoming = [
+    { external_id: "x", review_note: null, permit_number: "9-1", address_norm: "2 NEW RD" },
+    { external_id: "y", review_note: null, permit_number: "9-1", address_norm: "3 NEW RD" },
+  ];
+  const out = reconcileWithPrior(incoming, prior);
+  assert.ok(out.every((r) => r.id === undefined));
+  assert.deepEqual(missingFrom(prior, out).map((r) => r.id), [1], "the old one is flagged, and keeps blocking");
+});
+
+test("the two-house permit is untouched by the correction pass", () => {
+  const prior = [
+    { id: 155, external_id: "10451", permit_number: "15087540-1", address_norm: "4277 STEAMBOAT RD" },
+    { id: 156, external_id: "10452", permit_number: "15087540-1", address_norm: "415 CHINOE RD" },
+  ];
+  const incoming = [
+    { external_id: "n1", review_note: null, permit_number: "15087540-1", address_norm: "4277 STEAMBOAT RD" },
+    { external_id: "n2", review_note: null, permit_number: "15087540-1", address_norm: "415 CHINOE RD" },
+  ];
+  assert.deepEqual(reconcileWithPrior(incoming, prior).map((r) => r.id), [155, 156]);
+});
