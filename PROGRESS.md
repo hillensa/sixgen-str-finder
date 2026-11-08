@@ -1,4 +1,4 @@
-STATUS: BUILDING
+STATUS: BLOCKED — 742 duplicate permit rows need deleting from production; recommended answer: yes, keep the oldest row per permit_number
 
 ## Goal
 
@@ -31,6 +31,9 @@ nothing is marked eligible because a field was empty.
 - [x] `/api/streetview` proxy — dark until `GOOGLE_STREETVIEW_KEY` is set
 - [x] Make the Top 25 list collapsible
 - [x] Test Address: draw the existing STRs, the separation ring, and distances
+- [x] Fix permit refresh keying on unstable ArcGIS ObjectIDs (dc24ffc)
+- [ ] Delete the 742 duplicate permit rows (needs Seth's yes — see Blockers)
+- [ ] Re-link parcels, re-apply blocking rules, rebuild exclusion, re-screen listings
 - [ ] Refresh the for-sale listings from a fresh ImagineMLS export
 - [ ] Decide the photo source — Street View key, or re-cut the export (below)
 - [ ] Resolve whether an LFUCG permit survives a sale (below)
@@ -71,7 +74,19 @@ nothing is marked eligible because a field was empty.
 
 ## Blockers
 
-None stopping work. Two decisions only Seth can make:
+**0. Duplicate permit rows (2026-11-07).** Running `/api/refresh` today doubled
+`str_permits` from 738 to 1484 rows: LFUCG republished its layer, ObjectIDs
+renumbered, and the upsert keyed on them. Code is fixed (`dc24ffc`); the data is
+not. Backup of all 1484 rows:
+`C:/Users/hille/AppData/Local/Temp/claude/00f1a328d35bae88/0d97c7ac-3001-40b8-9577-d55e469f5103/scratchpad/str_permits_backup.json`
+Dry run: keep the oldest row per `permit_number` (742 kept, 742 deleted, 0
+permit numbers lost, the 8 genuinely new STR-26 permits kept), clear the false
+"No longer present" note on 253 kept rows, then run
+`fn_link_permits_to_parcels`, `fn_apply_blocking_rules`,
+`fn_rebuild_exclusions` and re-screen. The map's buffer geometry is barely
+affected (duplicates sit on the same spots); counts and density are.
+
+Two further decisions only Seth can make:
 
 1. **Photos.** `primary_photo` is null on all 162 rows — the ImagineMLS export
    view has no image field and no listing URL. Either (a) add
