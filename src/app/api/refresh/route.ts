@@ -5,6 +5,7 @@ import { fetchStrPermits, fetchParcelsForPoints } from "@/lib/arcgis";
 import { ringsToMultiPolygon, parcelAttrs } from "@/lib/gis/parcel";
 import { normalizeAddress } from "@/lib/address";
 import proj4 from "proj4";
+import { dedupeByIdentity, reconcileWithPrior, missingFrom } from "@/lib/permitIdentity";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
@@ -18,7 +19,7 @@ async function allRows(db: any, jid: string) {
   const PAGE = 1000; const out: any[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await db.from("str_permits")
-      .select("id,external_id,permit_number,review_note")
+      .select("id,external_id,permit_number,address_norm,review_note")
       .eq("jurisdiction_id", jid).eq("source", "city_gis")
       .order("id", { ascending: true }).range(from, from + PAGE - 1);
     if (error) throw new Error(`reading existing permits: ${error.message}`);
@@ -74,19 +75,15 @@ export async function POST(req: Request) {
   // `external_id` is the layer's ObjectID, and ArcGIS ObjectIDs are NOT stable:
   // a republish renumbers them. Keying the upsert on it meant a renumbered
   // layer matched nothing, inserted a second row for every permit in the
-  // county, and flagged the originals as "no longer present" — doubling the
-  // table and the blocking count in one call. `permit_number` is the licence
-  // and survives a republish, so the id is resolved through it first and the
-  // upsert updates the existing row rather than racing it.
-  const byPermitNumber = new Map<string, any>();
-  for (const r of priorRows) if (r.permit_number) byPermitNumber.set(r.permit_number, r);
-
-  const reconciled = rows.map((r) => {
-    const prior = r.permit_number ? byPermitNumber.get(r.permit_number) : null;
-    // Carry the prior row's id so this is an update, and clear any stale
-    // "no longer present" note: it is plainly present again.
-    return prior ? { ...r, id: prior.id, external_id: prior.external_id, review_note: r.review_note ?? null } : r;
-  });
+  // county, and flagged the originals as "no longer present". Identity is
+  // permit number + address (see lib/permitIdentity.ts for why not the number
+  // alone), resolved against the stored rows so the upsert updates them.
+  //
+  // The layer also repeats some rows outright; they are collapsed first, or two
+  // incoming rows would resolve to one stored row and the upsert would fail
+  // with "cannot affect row a second time".
+  const { rows: unique, collapsed: layerDuplicates } = dedupeByIdentity(rows);
+  const reconciled = reconcileWithPrior(unique, priorRows);
 
   for (let i = 0; i < reconciled.length; i += 500) {
     const { error } = await db.from("str_permits").upsert(reconciled.slice(i, i + 500), { onConflict: "jurisdiction_id,source,external_id" });
@@ -94,9 +91,8 @@ export async function POST(req: Request) {
   }
 
   // 1b. records that vanished from the layer keep blocking, but are flagged.
-  // Matched on permit_number for the same reason as above.
-  const seen = new Set(reconciled.map((r) => r.permit_number).filter(Boolean));
-  const dropped = priorRows.filter((r: any) => r.permit_number && !seen.has(r.permit_number));
+  // Judged on the same identity as above.
+  const dropped = missingFrom(priorRows, reconciled);
   if (dropped.length) {
     await db.from("str_permits")
       .update({ review_note: `No longer present in the LFUCG layer as of ${now.slice(0, 10)} — status unverified, still counted as blocking.`, updated_at: now })
@@ -141,7 +137,7 @@ export async function POST(req: Request) {
   await audit(db, actor, "gis.refresh", "jurisdiction", jid, { permits: rows.length, parcels: parcels.length, blocking, unclassified: unclassified.length, unlocated, dropped: dropped.length, ms: Date.now() - t0 });
 
   return NextResponse.json({
-    ok: true, permits: rows.length, blocking, unclassified: unclassified.length, unlocated,
+    ok: true, permits: rows.length, layerDuplicates, blocking, unclassified: unclassified.length, unlocated,
     parcels: parcels.length, linked: linked ?? 0, dropped: dropped.length,
     exclusion: ex?.[0] ?? null, elapsedMs: Date.now() - t0,
   });

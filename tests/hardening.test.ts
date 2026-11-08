@@ -446,14 +446,14 @@ test("REGRESSION: the house-to-house distance is never passed off as the rule", 
 
 test("REGRESSION: a renumbered ArcGIS layer must not duplicate the permit table", () => {
   // ArcGIS ObjectIDs are not stable across a republish. Keying the permit
-  // upsert on one meant the 2026-11-07 refresh matched nothing, inserted a
-  // second row for every permit in Fayette County (738 -> 1484), flagged the
-  // originals as vanished, and doubled the blocking count feeding the density
-  // test. permit_number is the licence and survives a republish.
+  // upsert on one meant the 2026-11-07 refresh matched nothing and inserted a
+  // second row for every permit in Fayette County (738 -> 1484). The refresh now
+  // resolves each row to its stored permit by permit number + address.
   const route = readFileSync(join(__dirname, "..", "src", "app", "api", "refresh", "route.ts"), "utf8");
-  assert.ok(/byPermitNumber/.test(route), "identity is resolved through permit_number");
-  assert.ok(/prior \? \{ \.\.\.r, id: prior\.id/.test(route), "a known permit updates its existing row");
-  assert.ok(/seen\.has\(r\.permit_number\)/.test(route), "and 'vanished' is judged on the stable key too");
+  assert.ok(/reconcileWithPrior\(unique, priorRows\)/.test(route), "incoming rows are resolved to stored ones");
+  assert.ok(/dedupeByIdentity\(rows\)/.test(route), "after the layer's own repeats are collapsed");
+  assert.ok(/missingFrom\(priorRows, reconciled\)/.test(route), "and 'vanished' is judged on the same identity");
+  assert.ok(!/byPermitNumber/.test(route), "never on the permit number alone — one number can cover two houses");
 });
 
 test("REGRESSION: the existing-permit read is paged past the PostgREST row cap", () => {
