@@ -1,4 +1,4 @@
-STATUS: BLOCKED — 742 duplicate permit rows need deleting from production; recommended answer: yes, keep the oldest row per permit_number
+STATUS: BLOCKED — next decisions are Seth's: dedupe 522 duplicated parcels (recommended: yes), then retire the September MLS listings once a complete Zillow pull lands (recommended: yes)
 
 ## Goal
 
@@ -32,8 +32,10 @@ nothing is marked eligible because a field was empty.
 - [x] Make the Top 25 list collapsible
 - [x] Test Address: draw the existing STRs, the separation ring, and distances
 - [x] Fix permit refresh keying on unstable ArcGIS ObjectIDs (dc24ffc)
-- [ ] Delete the 742 duplicate permit rows (needs Seth's yes — see Blockers)
-- [ ] Re-link parcels, re-apply blocking rules, rebuild exclusion, re-screen listings
+- [x] Delete duplicate permits: 1484 -> 743, keyed on permit number + address (2026-11-08)
+- [x] Re-sync from LFUCG with the fixed matcher: 0 inserted, 0 dropped, 626 blocking; buffers rebuilt; listings re-screened
+- [x] Permit identity = permit number + address; unambiguous address corrections update in place (22a38db, 3232c10)
+- [ ] Dedupe cached parcels: 1396 rows for 874 PVA ids (same ObjectID renumbering) — needs Seth's yes; no effect while density is off
 - [x] Import Zillow "Lexington with pool" search, page 1 (41 homes, with photos + links)
 - [x] Fold duplicate listings so each house is scored and listed once (a00771c)
 - [x] Weekly Zillow pull: `zillow` provider, extractor, checksum-verified import (34e56fc)
@@ -108,17 +110,19 @@ nothing is marked eligible because a field was empty.
 
 ## Blockers
 
-**0. Duplicate permit rows (2026-11-07).** Running `/api/refresh` today doubled
-`str_permits` from 738 to 1484 rows: LFUCG republished its layer, ObjectIDs
-renumbered, and the upsert keyed on them. Code is fixed (`dc24ffc`); the data is
-not. Backup of all 1484 rows:
-`C:/Users/hille/AppData/Local/Temp/claude/00f1a328d35bae88/0d97c7ac-3001-40b8-9577-d55e469f5103/scratchpad/str_permits_backup.json`
-Dry run: keep the oldest row per `permit_number` (742 kept, 742 deleted, 0
-permit numbers lost, the 8 genuinely new STR-26 permits kept), clear the false
-"No longer present" note on 253 kept rows, then run
-`fn_link_permits_to_parcels`, `fn_apply_blocking_rules`,
-`fn_rebuild_exclusions` and re-screen. The map's buffer geometry is barely
-affected (duplicates sit on the same spots); counts and density are.
+**0. Duplicate parcels.** The parcel cache is keyed on the ArcGIS ObjectID too,
+so the 2026-11-07 sync duplicated it: 1396 rows for 874 PVA ids. No current
+effect — spacing and the exclusion use geometry, and duplicates are identical —
+but the density test sums dwelling units over parcels and would be halved if
+that rule were enabled. Fix: key parcel writes on pva_id, repoint
+str_permits.parcel_id / properties.parcel_id to one row per PVA id, delete the
+rest. Needs Seth's yes (production delete).
+
+(Resolved 2026-11-08: duplicate permits. 1484 -> 743 rows. One permit number
+legitimately covers two houses — 15087540-1, 4277 Steamboat Rd and 415 Chinoe
+Rd — so identity is permit number + address. Two old-address rows the city had
+since corrected were removed. Backups in the session scratchpad:
+str_permits_backup.json, str_permits_backup_predelete.json.)
 
 Two further decisions only Seth can make:
 
