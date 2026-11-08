@@ -39,6 +39,11 @@ nothing is marked eligible because a field was empty.
 - [x] Weekly Zillow pull: `zillow` provider, extractor, checksum-verified import (34e56fc)
 - [x] First weekly-criteria pull: 41 of 113 (Zillow challenged page 2) — partial import
 - [x] Scheduled task `sixgen-weekly-zillow-pull`, Mondays 7:08 AM local
+- [x] Existing STRs layer: legible dots + a swatch per layer; /api/market pages past 1000 rows (f00df78)
+- [x] Zillow Pull page: saved beds/baths, Pull from Zillow, Send to Sixgen bookmark, paste + import (122e4a0)
+- [x] Weekly task + script read the saved search from app_settings
+- [x] Server Supabase clients bypass Next's fetch cache — health was replaying a Sept read (2c2bdd3)
+- [ ] Seth: drag the Send to Sixgen bookmark to the bookmarks bar, then do one pull from /zillow
 - [ ] Seth: complete Zillow's Press & Hold in the Browser pane, then "Run now" on the task
 - [ ] Decide whether to retire the September MLS listings (162 rows, provider csv)
 - [ ] Decide the photo source — Street View key, or re-cut the export (below)
@@ -83,6 +88,17 @@ nothing is marked eligible because a field was empty.
 - **Zillow's "HOA <= $0" filter includes homes with no HOA data**, which is most
   Lexington single-family listings. In the app they stay HOA_UNKNOWN; nothing
   from a feed is treated as verified no-HOA.
+- **On-demand Zillow pulls run in Seth's own browser.** The /zillow page opens
+  the saved search; a bookmarklet copies each rendered results page; pasting on
+  /zillow collects them; /api/zillow/import enforces: Zillow's filters must equal
+  the saved search, rows re-checked against the minimums, Fayette-County
+  coordinates only, photos only from photos.zillowstatic.com, URLs rebuilt from
+  the zpid, full sync only for a complete pull. The bookmark reloads a page
+  Zillow changed in place rather than re-copying the wrong page.
+- **The saved search lives in app_settings (`zillow_search`)** and drives both the
+  on-demand page and the Monday task.
+- **Server-side Supabase reads never use Next's fetch cache** (`noStoreFetch`).
+  Next cached the health check's GETs for a year, on Vercel across deploys.
 - **One listing per house.** A house in both the MLS export and Zillow is
   folded to its most recently seen listing before scoring and display.
 - **`fullSync` defaults to false** on refresh. It defaulted true in Phase 1 and
