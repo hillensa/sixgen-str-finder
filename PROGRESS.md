@@ -1,4 +1,4 @@
-STATUS: BLOCKED — next decisions are Seth's: dedupe 522 duplicated parcels (recommended: yes), then retire the September MLS listings once a complete Zillow pull lands (recommended: yes)
+STATUS: BLOCKED — waiting on Seth: one complete Zillow pull from /zillow, then retire the September MLS listings (recommended: yes); photo source and LFUCG questions still open
 
 ## Goal
 
@@ -35,7 +35,9 @@ nothing is marked eligible because a field was empty.
 - [x] Delete duplicate permits: 1484 -> 743, keyed on permit number + address (2026-11-08)
 - [x] Re-sync from LFUCG with the fixed matcher: 0 inserted, 0 dropped, 626 blocking; buffers rebuilt; listings re-screened
 - [x] Permit identity = permit number + address; unambiguous address corrections update in place (22a38db, 3232c10)
-- [ ] Dedupe cached parcels: 1396 rows for 874 PVA ids (same ObjectID renumbering) — needs Seth's yes; no effect while density is off
+- [x] Parcel writes keyed on PVA number via lib/gis/parcelStore.ts (db6e55b)
+- [x] Dedupe cached parcels: 1396 -> 874, references repointed; re-sync updated 511, inserted 0 (2026-11-08)
+- [x] Zoning districts checked: 96 rows, no duplicates
 - [x] Import Zillow "Lexington with pool" search, page 1 (41 homes, with photos + links)
 - [x] Fold duplicate listings so each house is scored and listed once (a00771c)
 - [x] Weekly Zillow pull: `zillow` provider, extractor, checksum-verified import (34e56fc)
@@ -110,13 +112,11 @@ nothing is marked eligible because a field was empty.
 
 ## Blockers
 
-**0. Duplicate parcels.** The parcel cache is keyed on the ArcGIS ObjectID too,
-so the 2026-11-07 sync duplicated it: 1396 rows for 874 PVA ids. No current
-effect — spacing and the exclusion use geometry, and duplicates are identical —
-but the density test sums dwelling units over parcels and would be halved if
-that rule were enabled. Fix: key parcel writes on pva_id, repoint
-str_permits.parcel_id / properties.parcel_id to one row per PVA id, delete the
-rest. Needs Seth's yes (production delete).
+(Resolved 2026-11-08: duplicate parcels. 1396 -> 874, one row per PVA id.
+For identical copies the most-referenced row was kept; for the three whose
+shape the county had adjusted, the current shape. 24 references repointed,
+one zone code carried over. Backup: parcels_backup.json in the session
+scratchpad.)
 
 (Resolved 2026-11-08: duplicate permits. 1484 -> 743 rows. One permit number
 legitimately covers two houses — 15087540-1, 4277 Steamboat Rd and 415 Chinoe
