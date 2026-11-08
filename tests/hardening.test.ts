@@ -511,3 +511,16 @@ test("REGRESSION: the Existing STRs layer is legible and labelled against its bu
   assert.ok(/buffers around them — red/.test(page), "and the buffers say they are red");
   assert.ok(/\(\[k, label, swatch\]\)/.test(page), "every layer row carries a swatch");
 });
+
+test("REGRESSION: no server-side Supabase read can be served from Next's fetch cache", () => {
+  // Next caches GET fetches outside a request it considers dynamic — a year, on
+  // disk and on Vercel across deploys. The health check's exclusion read was
+  // cached in September and reported the buffers "62 days old" two months after
+  // they were rebuilt.
+  const ns = readFileSync(join(__dirname, "..", "src", "lib", "supabase", "noStore.ts"), "utf8");
+  assert.ok(/cache: "no-store"/.test(ns));
+  for (const f of [["src", "lib", "supabase", "admin.ts"], ["src", "lib", "supabase", "server.ts"], ["src", "middleware.ts"]]) {
+    const src = readFileSync(join(__dirname, "..", ...f), "utf8");
+    assert.ok(/global: \{ fetch: noStoreFetch \}/.test(src), `${f.join("/")} must use noStoreFetch`);
+  }
+});

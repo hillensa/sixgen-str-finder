@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { noStoreFetch } from "@/lib/supabase/noStore";
 import { NextResponse, type NextRequest } from "next/server";
 import { limit, clientKey, ruleFor } from "@/lib/rateLimit";
 import { safeRedirectPath } from "@/lib/safeRedirect";
@@ -52,6 +53,8 @@ export async function middleware(request: NextRequest) {
         all.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
       },
     },
+    // a session check answered from a cache would let a signed-out user through
+    global: { fetch: noStoreFetch },
   });
 
   let user = null;

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { noStoreFetch } from "./noStore";
 /** Session-bound client (respects RLS). */
 export function createClient() {
   const store = cookies();
@@ -10,5 +11,6 @@ export function createClient() {
         try { all.forEach(({ name, value, options }) => store.set(name, value, options)); } catch { /* RSC */ }
       },
     },
+    global: { fetch: noStoreFetch },
   });
 }
